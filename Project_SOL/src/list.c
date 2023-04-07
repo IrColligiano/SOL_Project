@@ -1,12 +1,28 @@
 
 #include <list.h>
 
-void init_list(List * l,long n, long msec){
+int init_list(List * l,long n, long msec){
+	l->cond_semi_term=TRUE;
+	l->cond_term=TRUE;
 	l->msec=msec;
 	l->len=0;
 	l->max_len=(size_t)n;
 	l->tailer=NULL;
 	l->header=NULL;
+	errno=0;
+	if( pthread_mutex_init(&(l->list_mutex),NULL)!=0){
+    	errno=EINVAL;
+        return EXIT_FAILURE;
+    }
+	if(pthread_cond_init(&(l->list_cond),NULL)!=0){
+    	errno=EINVAL;
+        return EXIT_FAILURE;
+    }
+	if(pthread_cond_init(&(l->list_full_cond),NULL)!=0){
+    	errno=EINVAL;
+        return EXIT_FAILURE;
+    }
+	return EXIT_SUCCESS;
 }
 
 list * malloc_nodo(list * nodo){
@@ -41,7 +57,7 @@ int head_insert (List * l, char n[]){
 	if(l->len>=l->max_len)
 		return l->len;
 	new= malloc_nodo(new);
-	strncpy(new->path,n,PATHLEN);
+	strncpy(new->path,n,PATHLEN-1);
 	if(l->len==0)
 		l->tailer=new;
 	else{
@@ -71,9 +87,9 @@ void print_list(List * l){
 
 //elimina l ultimo elemento della lista e restituisce:
 //il path dell elemento eliminato,'\0'se non e stato elimanto 
-char* delete_last(List * l, char * ret){
+void delete_last(List * l, char ** ret){
 	if(l->len==0)
-		return (char*)'\0';
+		return;
 	list * tmp=l->tailer;
 	if(l->len==1){
 		l->tailer=NULL;
@@ -85,9 +101,9 @@ char* delete_last(List * l, char * ret){
 		tmp->prec=NULL;
 	}
 	l->len--;
-	strncpy(ret , tmp->path , PATHLEN);
+	strncpy(*ret , tmp->path , PATHLEN-1);
 	free(tmp);
-	return ret;
+	return;
 }
 
 void free_List(List * l){
@@ -104,7 +120,6 @@ void free_List(List * l){
 		tmp->prec=NULL;
 	}
 	l->len--;
-	free(tmp->path);
 	free(tmp);
 	free_List(l);
 	return;

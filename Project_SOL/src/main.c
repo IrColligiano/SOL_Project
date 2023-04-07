@@ -125,19 +125,70 @@ int main(int argc,char *argv[]){
         default:;
         }
     }
+    /*
+    int exitwhile=TRUE;
+    while( exitwhile ){
+        if(condterm==FALSE)
+            exitwhile=FALSE;
 
-    init_list(&Queue,Qlen,Tdelay);
+        if(Listoffile.len==0){
+            condsemiterm=FALSE;
+            if(Coda.len==0)
+                condterm=FALSE;
+        }
+
+        if(exitwhile && condsemiterm && condterm){
+            ts.tv_sec = Tdelay / 1000;
+            ts.tv_nsec = (Tdelay % 1000)*1000000;
+            nanosleep(&ts, &ts);
+            buffer=delete_last(&Listoffile,&buffer);
+            LOCK(&mutex);
+            head_insert(&Coda,buffer);
+            SIGNAL(&cond);
+            UNLOCK(&mutex);
+        }
+    }
+    */
+    if(init_list(&Queue,Qlen,Tdelay)!=0){
+        fprintf(stderr,"ERRORE: Inizializzazione coda concorrente\n");
+        return EXIT_FAILURE;
+    }
+    printf("inizio \n");
+    if(thread_create(Nthread)!=0){
+        fprintf(stderr,"ERRORE: Creazione thread\n");
+        return EXIT_FAILURE;
+    }
     int j=argc-1;
+    int exit_while=TRUE;
     while(j>0 && is_regular_file(argv[j])!=0){
+        LOCK(&(Queue.list_mutex));
+        msleep(Queue.msec);
         while(Queue.len>=Queue.max_len)
-            msleep(Queue.msec);
+            WAIT(&(Queue.list_full_cond),&(Queue.list_mutex));
         head_insert(&Queue,argv[j]);
+        SIGNAL(&(Queue.list_cond));
+        UNLOCK(&(Queue.list_mutex));
         j--;
         //printf("%s\n",argv[j]);
     }
-    list_files_recursively(DirectoryName,&Queue);
-    free(DirectoryName);
-    print_list(&Queue);
+    if(DirectoryName!=NULL){
+        list_files_recursively(DirectoryName,&Queue);
+        free(DirectoryName);
+    }
+    Queue.cond_term=FALSE;
+    LOCK(&(th_pool->change_mutex));
+    while(th_pool->n_th_on_work > 0){
+        WAIT(&(th_pool->join_cond),&(th_pool->change_mutex));
+        printf("mi sono svegliato\n");   
+    }
+    UNLOCK(&(th_pool->change_mutex));
+    for(j=0 ; j<th_pool->n_th ; j++){
+        if(JOIN((th_pool->arr_th[j]))==EXIT_FAILURE){
+            return EXIT_FAILURE;
+        }
+    }
+    free(th_pool->arr_th);
+    free(th_pool);
     /*
     if((pid=fork()) == -1) {
     	fprintf(stderr,"ERRORE: Fork\n");
@@ -239,10 +290,14 @@ void list_files_recursively(char *basePath,List * l){
                     strncat(fullpath,slash,1);
                     strncat(fullpath,dp->d_name,namelen);
                     if(is_regular_file(fullpath)!=0){
+                        LOCK(&(Queue.list_mutex));
+                        msleep(l->msec);
                         while(l->len>=l->max_len){
-                            msleep(l->msec/10);
+                             WAIT(&(Queue.list_full_cond),&(Queue.list_mutex));
                         }
                         head_insert(l,fullpath);
+                        SIGNAL(&(Queue.list_cond));
+                        UNLOCK(&(Queue.list_mutex));
                     }
                     memset(fullpath,'\0',1);
                 }

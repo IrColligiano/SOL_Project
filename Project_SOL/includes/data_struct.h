@@ -11,8 +11,10 @@
 typedef struct pool{
 	pthread_t     	*arr_th;
 	size_t 			n_th;
-	pthread_mutex_t	list_mutex;
-	pthread_cond_t	list_cond;
+	size_t			n_th_on_work;
+	pthread_mutex_t sck_mutex;
+	pthread_mutex_t change_mutex;
+	pthread_cond_t  join_cond;
 } t_pool;
 
 typedef struct node{
@@ -22,11 +24,17 @@ typedef struct node{
 }list;
 
 typedef struct list_t{
+	pthread_mutex_t	list_mutex;
+	pthread_cond_t	list_cond;
+	pthread_cond_t  list_full_cond;
 	long 			msec;
 	size_t		 	len;
 	size_t 			max_len;
 	struct node 	*header;
 	struct node 	*tailer;
+	int 			cond_term;
+	int				cond_semi_term;
+	int 			stop;
 }List;
 
 typedef struct abr_{

@@ -80,72 +80,86 @@ void * thread_delivery(void * arg){
     //printf("SERVER : Mi disconnetto\n");
     pthread_exit((void*)NULL);
 }
-
 */
-/*
-int  thread_create(){
-    if(Nthread<=0 || Qlen <=0){
+
+int  thread_create(long number_th){
+    th_pool=(t_pool*)_malloc_(sizeof(t_pool));
+    th_pool->n_th=(size_t)number_th;
+    th_pool->arr_th=(pthread_t*)_malloc_(sizeof(pthread_t)*(th_pool->n_th));
+    th_pool->n_th_on_work=(size_t)number_th;
+    errno=0;
+    if(th_pool->n_th<=0 || Queue.max_len <=0){
         errno=EINVAL;
         return EXIT_FAILURE;
     }
-    if( pthread_mutex_init(&mutex3,NULL)!=0||pthread_mutex_init(&mutex,NULL)!=0|| pthread_cond_init(&cond,NULL)!=0 || 
-        pthread_cond_init(&cond2,NULL)!=0 || pthread_mutex_init(&mutex2,NULL)!=0){
+    if( pthread_mutex_init(&(th_pool->change_mutex),NULL)!=0){
+        fprintf(stderr,"ERRORE: Inizializzazione variabile di mutex\n");
         errno=EINVAL;
         return EXIT_FAILURE;
     }
-    long i=Nthread;
-    int err;
-    nthread=Nthread;
-    if( (pthread_create(&arrth[i] , NULL , &thread_delivery, (void*)i)!=0)){
-        errno=EFAULT;
+    if( pthread_mutex_init(&(th_pool->sck_mutex),NULL)!=0){
+        fprintf(stderr,"ERRORE: Inizializzazione variabile di mutex\n");
+        errno=EINVAL;
         return EXIT_FAILURE;
     }
-    for(i=0; i<Nthread; i++){
-        if((err = pthread_create(&arrth[i] , NULL , &thread_work , (void *)i)) !=0 ){
+    if( pthread_cond_init(&(th_pool->join_cond),NULL)!=0){
+        fprintf(stderr,"ERRORE: Inizializzazione variabile di condizione\n");
+        errno=EINVAL;
+        return EXIT_FAILURE;
+    }
+    for(int i=0; i < th_pool->n_th; i++){
+        errno=0;
+        int err;
+        if((err = pthread_create(&(th_pool->arr_th[i]) , NULL , &thread_work , NULL)!=0) ){
+            fprintf(stderr,"ERRORE: Creazione thread n : %d\n",i);
             errno=EFAULT;
             return EXIT_FAILURE;
+
         }
     }
     return EXIT_SUCCESS;
 }
-*/
-/*
+
+int exit_ = TRUE;
+
 void * thread_work(void * arg){
-    char *buffer=_malloc_(sizeof(char)*PATHLEN);
-    char *ret=_malloc_(sizeof(char)*MSGSCK);
-    int err=0;
-    long result=0;
-    int i;
-    long x=0;
-    msg * messaggio=_malloc_(sizeof(msg));
-    messaggio->path=_malloc_(sizeof(char)*PATHLEN);
-    FILE * fp;
-    while(condterm){
-        LOCK(&mutex);
-        while(Coda.len==0 && condterm){
-            WAIT(&cond,&mutex);
+    while(TRUE){
+        LOCK(&(Queue.list_mutex));
+        while(Queue.len==0 && exit_){
+            WAIT(&(Queue.list_cond),&(Queue.list_mutex));
         }
-        if(condterm){
-            _strcpy_(&buffer,delete_last(&Coda,&ret),PATHLEN);
-            UNLOCK(&mutex);
+        if(exit_){
+            char buffer[PATHLEN];
+            memset(buffer,'\0',PATHLEN-1);
+            char *ret=_malloc_(sizeof(char)*PATHLEN);
+            memset(ret,'\0',PATHLEN-1);
+            FILE * fp=NULL;
+            delete_last(&Queue,&ret);
+            if(!Queue.cond_term && Queue.len==0){
+                exit_=FALSE;
+                printf("ciao2\n");
+            }
+            strncpy(buffer,ret,PATHLEN-1);
+            SIGNAL(&(Queue.list_full_cond));
+            UNLOCK(&(Queue.list_mutex));
+            free(ret);
             if ((fp=fopen(buffer,"rb"))==NULL){
 			    fprintf(stderr, "ERRORE:Fopen %s\n",buffer);
 			    pthread_exit((void*) EXIT_FAILURE);
 		    }
-            i=0;
-            result=0;
+            int err=0;
+            int i=0;
+            long result=0;
+            long x=0;
             while((err=fscanf(fp,"%ld",&x))==1){
                 result=result +( x*i);
                 ++i;
             }
             if(err==EOF){// sono arrivato in fondo al file
-                //fprintf(stdout,"Thread %ld il risultato del file %s e' %ld\n",(long)arg,buffer,result);
-                LOCK(&mutex2);
-                _strcpy_(&(messaggio->path),buffer,PATHLEN);
-                messaggio->res=result;
-                head_insert_(&Listforsend, messaggio->path , messaggio->res);
-                SIGNAL(&cond2);
-                UNLOCK(&mutex2);
+                LOCK(&(th_pool->sck_mutex));
+                fprintf(stdout,"Il risultato del file %s e' %ld\n",buffer,result);
+                ///qui dovrei scrivere sul canale;
+                UNLOCK(&(th_pool->sck_mutex));
             }
             if(err==0){ // ho letto caratteri nel file, che non voglio
                 //fprintf(stdout,"Thread %ld il file %s non corrisponde alle specifiche\n",(long)arg,buffer);
@@ -157,16 +171,29 @@ void * thread_work(void * arg){
 		    }
         }
         else{
-            UNLOCK(&mutex);
-        } 
+            printf("ciao\n");
+            BCAST(&(Queue.list_cond));
+            UNLOCK(&(Queue.list_mutex));
+            break;
+        }
     }
-    LOCK(&mutex3);
-    nthread--;
-    UNLOCK(&mutex3);
-    free(messaggio->path);
-    free(messaggio);
-    free(buffer);
-    free(ret);
+    LOCK(&(th_pool->change_mutex));
+    th_pool->n_th_on_work--;
+    printf("vado in vacanza %ld\n",th_pool->n_th_on_work);
+    if(th_pool->n_th_on_work<=0){
+        SIGNAL(&(th_pool->join_cond));
+    }
+    UNLOCK(&(th_pool->change_mutex));
     return (void *)NULL;
 }
-*/
+
+int JOIN(pthread_t th ){
+    errno=0;
+    if(pthread_join(th,NULL)!=0){
+        if(errno==EDEADLK || errno == EINVAL || errno==ESRCH){
+            fprintf(stderr, "ERRORE: Join\n");
+            return EXIT_FAILURE;
+        }
+    }
+    return EXIT_SUCCESS;
+}

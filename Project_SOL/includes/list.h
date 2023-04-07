@@ -3,6 +3,8 @@
 
 #include <utils.h>
 
+t_pool *th_pool;
+List Queue;
 /*
 extern int condsemiterm;
 extern int condterm;       		//variabile di terminazione dei thread
@@ -26,7 +28,7 @@ extern pthread_mutex_t mutex3;
 list *  malloc_nodo(list * nodo);
 
 //inizializza i valori della lista
-void init_list(List * l,long n,long msec);
+int init_list(List * l,long n,long msec);
 
 //inserisce elementi in testa alla lista
 //se maxlen==-1 inserisce in una lista contentente tutti i path dei file 
@@ -38,7 +40,7 @@ void print_list(List * l);
 
 //elimina l ultimo elemnto della lista e restituisce:
 //il path dell elemento eliminato,'\0'se non e stato elimanto 
-char * delete_last(List * l, char * ret);
+void delete_last(List * l,char ** ret);
 
 //elimina la lista;
 void free_List(List *l);
