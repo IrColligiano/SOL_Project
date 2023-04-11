@@ -5,6 +5,7 @@
 
 int JOIN(pthread_t th );
 
+long result_from_path(char* pathname);
 //void convert(msg * messaggio , char ** buf);
 
 int  thread_create(long number_th);

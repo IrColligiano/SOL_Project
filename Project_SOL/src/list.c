@@ -27,7 +27,7 @@ int init_list(List * l,long n, long msec){
 
 list * malloc_nodo(list * nodo){
 	nodo = _malloc_(sizeof(list));
-	memset(nodo->path,'\0',PATHLEN);
+	memset(nodo->path,'\0',PATHLEN-1);
 	nodo->next=NULL;
 	nodo->prec=NULL;
 	return nodo;
@@ -38,22 +38,6 @@ list * malloc_nodo(list * nodo){
 //altrimenti inserisce nella lista concorrente 
 int head_insert (List * l, char n[]){
 	list * new=NULL;
-    /*
-	if(l->max_len==-1){
-		new= malloc_nodo(new);
-		strncpy(new->path,n,PATHLEN);
-		if(l->len==0)
-			l->tailer=new;
-		else{
-			l->header->prec=new;
-			new->next=l->header;
-		}
-		l->header=new;
-		l->len++;
-		return l->len;
-		}
-
-	else{*/
 	if(l->len>=l->max_len)
 		return l->len;
 	new= malloc_nodo(new);

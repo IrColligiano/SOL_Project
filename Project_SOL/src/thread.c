@@ -1,5 +1,6 @@
 
 #include <thread.h>
+#include <unistd.h>
 /*
 void convert(msg * messaggio , char ** buf){
     char tmp[MSGSCK-PATHLEN-2];
@@ -82,6 +83,36 @@ void * thread_delivery(void * arg){
 }
 */
 
+long result_from_path(char* pathname) {
+    if(pathname == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    size_t n_byte=0;
+    size_t n_byte_for_time=1;
+    long res = 0;
+    long i = 0;
+    long x=0;
+    FILE* fp=NULL;
+    if((fp=fopen(pathname, "rb")) == NULL) {
+        fprintf(stderr,"ERRORE: fopen %s\n",pathname);
+        return -1;
+    }
+    while((n_byte=fread(&x , sizeof(long), n_byte_for_time , fp))== 1) {
+        res = res +(x * i);
+        i++;
+    }
+    if(feof(fp)){
+        fclose(fp);
+        return res;
+    }
+    else{
+        fclose(fp);
+    return -1;
+    }
+}
+
+
 int  thread_create(long number_th){
     th_pool=(t_pool*)_malloc_(sizeof(t_pool));
     th_pool->n_th=(size_t)number_th;
@@ -121,65 +152,51 @@ int  thread_create(long number_th){
 }
 
 int exit_ = TRUE;
-
 void * thread_work(void * arg){
-    while(TRUE){
+    int exit_while = TRUE;
+    while(exit_while){
         LOCK(&(Queue.list_mutex));
-        while(Queue.len==0 && exit_){
+        if(!(Queue.cond_term) && Queue.len==0){
+            exit_=FALSE;
+            BCAST(&(Queue.list_cond));
+            exit_while=FALSE;
+            }
+        while(Queue.len==0 && exit_ && exit_while){
             WAIT(&(Queue.list_cond),&(Queue.list_mutex));
+            //printf("Thread sveglo\n");
         }
-        if(exit_){
+        if(exit_ && exit_while){
+            long result=0;
+            int err=0;
+            //FILE * fp=NULL;
             char buffer[PATHLEN];
             memset(buffer,'\0',PATHLEN-1);
             char *ret=_malloc_(sizeof(char)*PATHLEN);
             memset(ret,'\0',PATHLEN-1);
-            FILE * fp=NULL;
             delete_last(&Queue,&ret);
-            if(!Queue.cond_term && Queue.len==0){
-                exit_=FALSE;
-                printf("ciao2\n");
-            }
-            strncpy(buffer,ret,PATHLEN-1);
             SIGNAL(&(Queue.list_full_cond));
             UNLOCK(&(Queue.list_mutex));
+            strncpy(buffer,ret,PATHLEN-1);
             free(ret);
-            if ((fp=fopen(buffer,"rb"))==NULL){
-			    fprintf(stderr, "ERRORE:Fopen %s\n",buffer);
-			    pthread_exit((void*) EXIT_FAILURE);
-		    }
-            int err=0;
-            int i=0;
-            long result=0;
-            long x=0;
-            while((err=fscanf(fp,"%ld",&x))==1){
-                result=result +( x*i);
-                ++i;
+            if((result=result_from_path(buffer))==-1){
+                fprintf(stderr,"ERRORE: Lettura file\n");
             }
-            if(err==EOF){// sono arrivato in fondo al file
+            else{
                 LOCK(&(th_pool->sck_mutex));
                 fprintf(stdout,"Il risultato del file %s e' %ld\n",buffer,result);
                 ///qui dovrei scrivere sul canale;
                 UNLOCK(&(th_pool->sck_mutex));
             }
-            if(err==0){ // ho letto caratteri nel file, che non voglio
-                //fprintf(stdout,"Thread %ld il file %s non corrisponde alle specifiche\n",(long)arg,buffer);
-            }
-            fclose(fp);
-            if(errno==EBADF){
-                fprintf(stderr, "ERRORE: Fclose %s\n",buffer);
-			    pthread_exit((void*)EXIT_FAILURE); 
-		    }
         }
         else{
-            printf("ciao\n");
             BCAST(&(Queue.list_cond));
+            exit_while=FALSE;
             UNLOCK(&(Queue.list_mutex));
-            break;
         }
     }
     LOCK(&(th_pool->change_mutex));
     th_pool->n_th_on_work--;
-    printf("vado in vacanza %ld\n",th_pool->n_th_on_work);
+    //printf("Vado in vacanza %ld\n",th_pool->n_th_on_work);
     if(th_pool->n_th_on_work<=0){
         SIGNAL(&(th_pool->join_cond));
     }
@@ -197,3 +214,5 @@ int JOIN(pthread_t th ){
     }
     return EXIT_SUCCESS;
 }
+
+
