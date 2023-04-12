@@ -32,7 +32,7 @@ long Qlen= QLENDEF;          //variabile per la lunghezza della coda
 long Tdelay= TDELAYDEF;     //variabile per i ms
 char *DirectoryName=NULL;
 char *Filename=NULL;
-List Queue;
+List * Queue=NULL;
 t_pool * th_pool=NULL;
 //-------------------------MAIN--------------------------------
 
@@ -141,13 +141,13 @@ int main(int argc,char *argv[]){
         int j=argc-1;
         while(j>0){
             if(is_regular_file(argv[j])!=0){
-                LOCK(&(Queue.list_mutex));
-                while(Queue.len>=Queue.max_len)
-                    WAIT(&(Queue.list_full_cond),&(Queue.list_mutex));
-                msleep(Queue.msec);
+                LOCK(&(Queue->list_mutex));
+                while(Queue->len>=Queue->max_len)
+                    WAIT(&(Queue->list_full_cond),&(Queue->list_mutex));
+                msleep(Queue->msec);
                 head_insert(&Queue,argv[j]);
-                SIGNAL(&(Queue.list_cond));
-                UNLOCK(&(Queue.list_mutex));
+                SIGNAL(&(Queue->list_cond));
+                UNLOCK(&(Queue->list_mutex));
             }
             j--;
         }
@@ -155,20 +155,21 @@ int main(int argc,char *argv[]){
             list_files_recursively(DirectoryName);
             free(DirectoryName);
         }
-        Queue.cond_term=FALSE;
-        LOCK(&(th_pool->change_mutex));
+        Queue->cond_term=FALSE;
+        LOCK(&(th_pool->join_mutex));
         while(th_pool->n_th_on_work > 0){
-            WAIT(&(th_pool->join_cond),&(th_pool->change_mutex));
+            WAIT(&(th_pool->join_cond),&(th_pool->join_mutex));
             printf("main sveglo\n");   
         }
-        UNLOCK(&(th_pool->change_mutex));
+        UNLOCK(&(th_pool->join_mutex));
         for(j=0 ; j<th_pool->n_th ; j++){
             if(JOIN((th_pool->arr_th[j]))==EXIT_FAILURE){
                 return EXIT_FAILURE;
             }
         }
-        free(th_pool->arr_th);
-        free(th_pool);
+        free_resource();
+        //free(th_pool->arr_th);
+        //free(th_pool);
         //waitpid();
     }
     if(pid==0){
@@ -239,8 +240,8 @@ int is_directory(const char *path){
 }
 
 void list_files_recursively(char *basePath){
-    char *path=_malloc_(sizeof(char)*PATHLEN);
-    char *fullpath=_malloc_(sizeof(char)*PATHLEN);
+    char path[PATHLEN];
+    char fullpath[PATHLEN];
     memset(path,'\0',PATHLEN-1);
     memset(fullpath,'\0',PATHLEN-1);
     size_t pathlen=0;
@@ -250,36 +251,32 @@ void list_files_recursively(char *basePath){
     char slash[2]={'/','\0'};
     DIR *dir = opendir(basePath);
     if(dir==NULL){
-        free(path);
-        free(fullpath);
         return;
     }
     while ((dp = readdir(dir)) != NULL){
         if(errno==EBADF){
             closedir(dir);
-            free(fullpath);
-            free(path);
-        return;
+            return;
         }
         namelen=strnlen(dp->d_name,PATHLEN);
         if (strncmp(dp->d_name,".",namelen) != 0 && strncmp(dp->d_name, "..",namelen) != 0){
-            pathlen=strnlen(path,PATHLEN);
+            pathlen=strnlen(path,PATHLEN-1);
             if ( !(pathlen + basepathlen + namelen >= PATHLEN ) ){
                 if( dp->d_type == DT_REG && !(basepathlen + namelen  >= PATHLEN ) ){
                     strncpy(fullpath,basePath,PATHLEN-1);
                     strncat(fullpath,slash,1);
                     strncat(fullpath,dp->d_name,namelen);
                     if(is_regular_file(fullpath)!=0){
-                        LOCK(&(Queue.list_mutex));
-                        while(Queue.len>=Queue.max_len){
-                             WAIT(&(Queue.list_full_cond),&(Queue.list_mutex));
+                        LOCK(&(Queue->list_mutex));
+                        while(Queue->len >= Queue->max_len){
+                             WAIT(&(Queue->list_full_cond),&(Queue->list_mutex));
                         }
-                        if(msleep(Queue.msec)==-1){
+                        if(msleep(Queue->msec)==-1){
                             fprintf(stderr,"ERRORE: nanosleep\n");
                         }
                         head_insert(&Queue,fullpath);
-                        SIGNAL(&(Queue.list_cond));
-                        UNLOCK(&(Queue.list_mutex));
+                        SIGNAL(&(Queue->list_cond));
+                        UNLOCK(&(Queue->list_mutex));
                     }
                     memset(fullpath,'\0',PATHLEN-1);
                 }
@@ -291,8 +288,6 @@ void list_files_recursively(char *basePath){
         }
     }
     closedir(dir);
-    free(fullpath);
-    free(path);
     return;
 }
 

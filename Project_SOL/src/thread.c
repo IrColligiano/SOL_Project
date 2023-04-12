@@ -88,12 +88,12 @@ long result_from_path(char* pathname) {
         errno = EINVAL;
         return -1;
     }
-    size_t n_byte=0;
-    size_t n_byte_for_time=1;
-    long res = 0;
-    long i = 0;
-    long x=0;
-    FILE* fp=NULL;
+    size_t n_byte =          0;
+    size_t n_byte_for_time = 1;
+    long res =               0;
+    long i =                 0;
+    long x =                 0;
+    FILE* fp =               NULL;
     if((fp=fopen(pathname, "rb")) == NULL) {
         fprintf(stderr,"ERRORE: fopen %s\n",pathname);
         return -1;
@@ -112,18 +112,36 @@ long result_from_path(char* pathname) {
     }
 }
 
+int free_resource(){
+    if(th_pool==NULL)
+        return EXIT_SUCCESS;
+    else{
+        DMUTEX(&(th_pool->sck_mutex));
+        DMUTEX(&(th_pool->join_mutex));
+        DMUTEX(&Queue->list_mutex);
+        DCOND(&(th_pool->join_cond));
+        DCOND(&(Queue->list_cond));
+        DCOND(&(Queue->list_full_cond));
+
+        free(th_pool->arr_th);
+        free(th_pool);
+        th_pool=NULL;
+        free_List(&Queue);
+        free(Queue);
+        Queue=NULL;
+    }
+
+    return EXIT_SUCCESS;
+}
+
 
 int  thread_create(long number_th){
-    th_pool=(t_pool*)_malloc_(sizeof(t_pool));
-    th_pool->n_th=(size_t)number_th;
-    th_pool->arr_th=(pthread_t*)_malloc_(sizeof(pthread_t)*(th_pool->n_th));
-    th_pool->n_th_on_work=(size_t)number_th;
+    th_pool =               (t_pool*)_malloc_(sizeof(t_pool));
+    th_pool->n_th =         (size_t)number_th;
+    th_pool->arr_th =       (pthread_t*)_malloc_(sizeof(pthread_t)*(th_pool->n_th));
+    th_pool->n_th_on_work = (size_t)number_th;
     errno=0;
-    if(th_pool->n_th<=0 || Queue.max_len <=0){
-        errno=EINVAL;
-        return EXIT_FAILURE;
-    }
-    if( pthread_mutex_init(&(th_pool->change_mutex),NULL)!=0){
+    if( pthread_mutex_init(&(th_pool->join_mutex),NULL)!=0){
         fprintf(stderr,"ERRORE: Inizializzazione variabile di mutex\n");
         errno=EINVAL;
         return EXIT_FAILURE;
@@ -155,27 +173,27 @@ int exit_ = TRUE;
 void * thread_work(void * arg){
     int exit_while = TRUE;
     while(exit_while){
-        LOCK(&(Queue.list_mutex));
-        if(!(Queue.cond_term) && Queue.len==0){
+        LOCK(&(Queue->list_mutex));
+        if(!(Queue->cond_term) && Queue->len==0){
             exit_=FALSE;
-            BCAST(&(Queue.list_cond));
+            BCAST(&(Queue->list_cond));
             exit_while=FALSE;
             }
-        while(Queue.len==0 && exit_ && exit_while){
-            WAIT(&(Queue.list_cond),&(Queue.list_mutex));
+        while(Queue->len==0 && exit_ && exit_while){
+            WAIT(&(Queue->list_cond),&(Queue->list_mutex));
             //printf("Thread sveglo\n");
         }
         if(exit_ && exit_while){
-            long result=0;
-            int err=0;
+            long result = 0;
+            int err =     0;
             //FILE * fp=NULL;
             char buffer[PATHLEN];
             memset(buffer,'\0',PATHLEN-1);
             char *ret=_malloc_(sizeof(char)*PATHLEN);
             memset(ret,'\0',PATHLEN-1);
             delete_last(&Queue,&ret);
-            SIGNAL(&(Queue.list_full_cond));
-            UNLOCK(&(Queue.list_mutex));
+            SIGNAL(&(Queue->list_full_cond));
+            UNLOCK(&(Queue->list_mutex));
             strncpy(buffer,ret,PATHLEN-1);
             free(ret);
             if((result=result_from_path(buffer))==-1){
@@ -183,25 +201,25 @@ void * thread_work(void * arg){
             }
             else{
                 LOCK(&(th_pool->sck_mutex));
-                fprintf(stdout,"Il risultato del file %s e' %ld\n",buffer,result);
+                fprintf(stdout,"%s -> %ld\n",buffer,result);
                 ///qui dovrei scrivere sul canale;
                 UNLOCK(&(th_pool->sck_mutex));
             }
         }
         else{
-            BCAST(&(Queue.list_cond));
-            exit_while=FALSE;
-            UNLOCK(&(Queue.list_mutex));
+            BCAST(&(Queue->list_cond));
+            exit_while = FALSE;
+            UNLOCK(&(Queue->list_mutex));
         }
     }
-    LOCK(&(th_pool->change_mutex));
+    LOCK(&(th_pool->join_mutex));
     th_pool->n_th_on_work--;
     //printf("Vado in vacanza %ld\n",th_pool->n_th_on_work);
     if(th_pool->n_th_on_work<=0){
         SIGNAL(&(th_pool->join_cond));
     }
-    UNLOCK(&(th_pool->change_mutex));
-    return (void *)NULL;
+    UNLOCK(&(th_pool->join_mutex));
+    return (void *) NULL;
 }
 
 int JOIN(pthread_t th ){

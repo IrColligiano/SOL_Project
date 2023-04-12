@@ -13,7 +13,7 @@ typedef struct pool{
 	size_t 			n_th;
 	size_t			n_th_on_work;
 	pthread_mutex_t sck_mutex;
-	pthread_mutex_t change_mutex;
+	pthread_mutex_t join_mutex;
 	pthread_cond_t  join_cond;
 } t_pool;
 
@@ -33,8 +33,6 @@ typedef struct list_t{
 	struct node 	*header;
 	struct node 	*tailer;
 	int 			cond_term;
-	int				cond_semi_term;
-	int 			stop;
 }List;
 
 typedef struct abr_{

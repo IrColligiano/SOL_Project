@@ -3,6 +3,8 @@
 
 #include <list.h>
 
+int free_resource();
+
 int JOIN(pthread_t th );
 
 long result_from_path(char* pathname);
