@@ -1,5 +1,5 @@
-#ifndef __D_STRUCT__
-#define __D_STRUCT__
+#ifndef __DATA_STRUCT__
+#define __DATA_STRUCT__
 
 #define PATHLEN      257 // lunghezza path
 #define NTHREADDEF   4   //valore default numero thread

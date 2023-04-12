@@ -3,6 +3,14 @@
 
 #include <list.h>
 
+t_pool *th_pool;
+
+void* sig_handler_thread_work(void* arg);
+
+int install_sighandler_MasterWorker();
+
+void kill_sighandler();
+
 int free_resource();
 
 int JOIN(pthread_t th );

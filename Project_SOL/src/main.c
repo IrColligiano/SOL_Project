@@ -25,8 +25,8 @@ char * arg_char_dir(char * n);
 int is_regular_file(const char *path);
 int is_directory(const char *path);
 
-//int fd_skt, fd_c; // sck
-//struct sockaddr_un sa;
+int fd_skt, fd_c; // sck
+struct sockaddr_un sa;
 long Nthread= NTHREADDEF;    // variabile del numero di thread
 long Qlen= QLENDEF;          //variabile per la lunghezza della coda
 long Tdelay= TDELAYDEF;     //variabile per i ms
@@ -34,6 +34,7 @@ char *DirectoryName=NULL;
 char *Filename=NULL;
 List * Queue=NULL;
 t_pool * th_pool=NULL;
+int term_for_sig = TRUE;
 //-------------------------MAIN--------------------------------
 
 int main(int argc,char *argv[]){
@@ -56,7 +57,6 @@ int main(int argc,char *argv[]){
         int opt_d=0;
         //int i=0; // indice
         char*a=NULL; //puntatore char di appoggio per getopt ed altre funzioni del main
-
         //while per il parser getopt
         while((opt = getopt(argc, argv, "n:q:d:t:")) != -1){
             switch (opt){
@@ -130,6 +130,8 @@ int main(int argc,char *argv[]){
             default:;
             }
         }
+        install_sighandler_MasterWorker();
+
         if(init_list(&Queue,Qlen,Tdelay)!=0){
             fprintf(stderr,"ERRORE: Inizializzazione coda concorrente\n");
             return EXIT_FAILURE;
@@ -139,10 +141,10 @@ int main(int argc,char *argv[]){
             return EXIT_FAILURE;
         }
         int j=argc-1;
-        while(j>0){
+        while(j > 0 && term_for_sig){
             if(is_regular_file(argv[j])!=0){
                 LOCK(&(Queue->list_mutex));
-                while(Queue->len>=Queue->max_len)
+                while(Queue->len >= Queue->max_len && term_for_sig)
                     WAIT(&(Queue->list_full_cond),&(Queue->list_mutex));
                 msleep(Queue->msec);
                 head_insert(&Queue,argv[j]);
@@ -151,23 +153,28 @@ int main(int argc,char *argv[]){
             }
             j--;
         }
-        if(DirectoryName!=NULL){
+
+        if(DirectoryName != NULL && term_for_sig){
             list_files_recursively(DirectoryName);
             free(DirectoryName);
         }
+
         Queue->cond_term=FALSE;
         LOCK(&(th_pool->join_mutex));
-        while(th_pool->n_th_on_work > 0){
+        while(th_pool->n_th_on_work > 0 && term_for_sig){
             WAIT(&(th_pool->join_cond),&(th_pool->join_mutex));
             printf("main sveglo\n");   
         }
         UNLOCK(&(th_pool->join_mutex));
+
         for(j=0 ; j<th_pool->n_th ; j++){
             if(JOIN((th_pool->arr_th[j]))==EXIT_FAILURE){
                 return EXIT_FAILURE;
             }
         }
+    
         free_resource();
+        kill_sighandler();
         //free(th_pool->arr_th);
         //free(th_pool);
         //waitpid();
@@ -253,7 +260,7 @@ void list_files_recursively(char *basePath){
     if(dir==NULL){
         return;
     }
-    while ((dp = readdir(dir)) != NULL){
+    while ((dp = readdir(dir)) != NULL && term_for_sig){
         if(errno==EBADF){
             closedir(dir);
             return;
@@ -266,12 +273,12 @@ void list_files_recursively(char *basePath){
                     strncpy(fullpath,basePath,PATHLEN-1);
                     strncat(fullpath,slash,1);
                     strncat(fullpath,dp->d_name,namelen);
-                    if(is_regular_file(fullpath)!=0){
+                    if(is_regular_file(fullpath)!=0 && term_for_sig){
                         LOCK(&(Queue->list_mutex));
-                        while(Queue->len >= Queue->max_len){
+                        while(Queue->len >= Queue->max_len && term_for_sig){
                              WAIT(&(Queue->list_full_cond),&(Queue->list_mutex));
                         }
-                        if(msleep(Queue->msec)==-1){
+                        if( msleep(Queue->msec) == -1){
                             fprintf(stderr,"ERRORE: nanosleep\n");
                         }
                         head_insert(&Queue,fullpath);

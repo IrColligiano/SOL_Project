@@ -1,6 +1,12 @@
 
-#include <thread.h>
+#include <signal.h>
 #include <unistd.h>
+#include <thread.h>
+
+int term_for_sig;
+int exit_ = TRUE;
+pthread_t sig_handler_thread;
+sigset_t mask;
 /*
 void convert(msg * messaggio , char ** buf){
     char tmp[MSGSCK-PATHLEN-2];
@@ -94,11 +100,11 @@ long result_from_path(char* pathname) {
     long i =                 0;
     long x =                 0;
     FILE* fp =               NULL;
-    if((fp=fopen(pathname, "rb")) == NULL) {
+    if((fp = fopen(pathname, "rb")) == NULL) {
         fprintf(stderr,"ERRORE: fopen %s\n",pathname);
         return -1;
     }
-    while((n_byte=fread(&x , sizeof(long), n_byte_for_time , fp))== 1) {
+    while((n_byte = fread(&x , sizeof(long), n_byte_for_time , fp)) == 1) {
         res = res +(x * i);
         i++;
     }
@@ -113,8 +119,9 @@ long result_from_path(char* pathname) {
 }
 
 int free_resource(){
-    if(th_pool==NULL)
-        return EXIT_SUCCESS;
+    if( th_pool == NULL)
+        return EXIT_FAILURE;
+
     else{
         DMUTEX(&(th_pool->sck_mutex));
         DMUTEX(&(th_pool->join_mutex));
@@ -125,13 +132,12 @@ int free_resource(){
 
         free(th_pool->arr_th);
         free(th_pool);
-        th_pool=NULL;
+        th_pool = NULL;
         free_List(&Queue);
         free(Queue);
-        Queue=NULL;
+        Queue = NULL;
+        return EXIT_SUCCESS;
     }
-
-    return EXIT_SUCCESS;
 }
 
 
@@ -159,7 +165,7 @@ int  thread_create(long number_th){
     for(int i=0; i < th_pool->n_th; i++){
         errno=0;
         int err;
-        if((err = pthread_create(&(th_pool->arr_th[i]) , NULL , &thread_work , NULL)!=0) ){
+        if((err = pthread_create(&(th_pool->arr_th[i]) , NULL , &thread_work , NULL) !=0) ){
             fprintf(stderr,"ERRORE: Creazione thread n : %d\n",i);
             errno=EFAULT;
             return EXIT_FAILURE;
@@ -169,34 +175,33 @@ int  thread_create(long number_th){
     return EXIT_SUCCESS;
 }
 
-int exit_ = TRUE;
+
 void * thread_work(void * arg){
     int exit_while = TRUE;
-    while(exit_while){
+    while(exit_while && term_for_sig){
         LOCK(&(Queue->list_mutex));
-        if(!(Queue->cond_term) && Queue->len==0){
-            exit_=FALSE;
+        if(!(Queue->cond_term) && Queue->len == 0 ){
+            exit_ = FALSE;
             BCAST(&(Queue->list_cond));
-            exit_while=FALSE;
+            exit_while = FALSE;
             }
-        while(Queue->len==0 && exit_ && exit_while){
+        while(Queue->len==0 && exit_ && exit_while && term_for_sig){
             WAIT(&(Queue->list_cond),&(Queue->list_mutex));
             //printf("Thread sveglo\n");
         }
-        if(exit_ && exit_while){
+        if(exit_ && exit_while && term_for_sig){
             long result = 0;
             int err =     0;
-            //FILE * fp=NULL;
-            char buffer[PATHLEN];
+            char buffer   [PATHLEN];
+            char *ret =   _malloc_(sizeof(char)*PATHLEN);
             memset(buffer,'\0',PATHLEN-1);
-            char *ret=_malloc_(sizeof(char)*PATHLEN);
             memset(ret,'\0',PATHLEN-1);
-            delete_last(&Queue,&ret);
+            delete_last(&Queue , &ret);
             SIGNAL(&(Queue->list_full_cond));
             UNLOCK(&(Queue->list_mutex));
-            strncpy(buffer,ret,PATHLEN-1);
+            strncpy(buffer , ret , PATHLEN-1);
             free(ret);
-            if((result=result_from_path(buffer))==-1){
+            if((result = result_from_path(buffer)) == -1){
                 fprintf(stderr,"ERRORE: Lettura file\n");
             }
             else{
@@ -213,9 +218,9 @@ void * thread_work(void * arg){
         }
     }
     LOCK(&(th_pool->join_mutex));
-    th_pool->n_th_on_work--;
+    th_pool->n_th_on_work --;
     //printf("Vado in vacanza %ld\n",th_pool->n_th_on_work);
-    if(th_pool->n_th_on_work<=0){
+    if(th_pool->n_th_on_work <= 0){
         SIGNAL(&(th_pool->join_cond));
     }
     UNLOCK(&(th_pool->join_mutex));
@@ -223,8 +228,8 @@ void * thread_work(void * arg){
 }
 
 int JOIN(pthread_t th ){
-    errno=0;
-    if(pthread_join(th,NULL)!=0){
+    errno = 0;
+    if(pthread_join(th,NULL) != 0){
         if(errno==EDEADLK || errno == EINVAL || errno==ESRCH){
             fprintf(stderr, "ERRORE: Join\n");
             return EXIT_FAILURE;
@@ -232,5 +237,76 @@ int JOIN(pthread_t th ){
     }
     return EXIT_SUCCESS;
 }
+ /////////////////////////////////threa for signalhandler//////////////////////////////
+/*
+static int send_print_request() {
+    int w;
+    LOCK(&(th_pool->sck_mutex));
+    size_t print_val = -1;
+    errno = 0;
+    if ((w = writen(MasterWorker_socket, &print_val, sizeof(size_t))) < 0)  {
+        perror("ERRORE: writen len\n");
+        return -1;
+    }
+    if (w == 0) {
+        fprintf(stderr,"ERRORE: non è stato possibile scrivere nel socket.\n");
+        return 0;
+    }
+    UNLOCK(&(th_pool->sck_mutex));
+    return 1;
+}
+*/
+void* sig_handler_thread_work(void* arg) {
+    while(TRUE) {
+        int signum;
+        int err = sigwait(&mask , &signum);
+        if(err != 0) {
+            fprintf(stderr , "ERRORE: sigwait\n");//sigwait smaschera e si sospende
+            exit(EXIT_FAILURE);
+        }
+	    switch(signum) {
+	        case SIGHUP: 
+	        case SIGINT:
+	        case SIGQUIT:
+	        case SIGTERM:
+	            term_for_sig = FALSE;
+	            pthread_exit(NULL);
+            case SIGUSR1:
+                //send_print_request();
+                break;
+	        default: ;  /* Terminazione */
+	    }
+    }
+    pthread_exit(NULL);
+}
 
+void kill_sighandler() {
+    pthread_kill(sig_handler_thread, SIGQUIT);
+    JOIN(sig_handler_thread);
+}
+
+int install_sighandler_MasterWorker() {
+    struct sigaction signal_handler;
+    memset(&signal_handler, 0, sizeof(signal_handler));
+    signal_handler.sa_handler = SIG_IGN; 
+    if(sigaction(SIGPIPE, &signal_handler , NULL) == -1) {
+        fprintf(stderr,"ERRORE: sigaction SIGPIPE\n");
+        return EXIT_FAILURE;
+    }
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGHUP);   // aggiunto SIGHUP alla maschera
+    sigaddset(&mask, SIGINT);   // aggiunto SIGINT alla maschera
+    sigaddset(&mask, SIGQUIT);  // aggiunto SIGQUIT alla maschera
+    sigaddset(&mask, SIGTERM);  // aggiunto SIGTERM alla maschera
+    sigaddset(&mask, SIGUSR1);  // aggiunto SIGUSR1 alla maschera
+    if(pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0) {
+        perror("ERRORE: pthread_sigmask\n");
+        return EXIT_FAILURE;
+    }
+    if (pthread_create( &sig_handler_thread , NULL, sig_handler_thread_work, (void*) &mask ) != 0) {
+        perror("ERRORE: pthread_create\n");
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
 

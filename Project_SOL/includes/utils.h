@@ -1,5 +1,5 @@
-#if !defined (UTILS_H)
-#define UTILS_H
+#ifndef __UTILS_H__
+#define __UTILS_H__
 
 #define UNLOCK(l)                                               \
     if (pthread_mutex_unlock(l)!=0){                            \
