@@ -3,7 +3,8 @@
 
 #include <list.h>
 
-t_pool *th_pool;
+pool *th_pool;
+pthread_t sig_handler_thread;
 
 void* signal_handler_thread_work(void* arg);
 
@@ -15,7 +16,7 @@ int free_resource();
 
 int JOIN(pthread_t th );
 
-long result_from_path(char* pathname);
+long result_from_file(char* pathname);
 
 int write_on_socket_print_request();
 

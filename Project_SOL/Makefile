@@ -10,7 +10,7 @@ SCK = farm.sck
 
 Q = -q 8
 
-N = -n 8
+N = -n 4
 
 T = -t 10
 
@@ -20,7 +20,7 @@ FILE = file1.dat file2.dat file3.dat file4.dat file5.dat file10.dat file12.dat f
 
 OBJ = obj/main.o obj/utils.o obj/list.o obj/thread.o obj/tree.o obj/collector.o
 
-.PHONY : clean clean_sck exec
+.PHONY : clean clean_sck exec valg
  
 $(EXE) : $(OBJ)
 	$(CC) $(CFLAGS) $^ -o $(EXE)
@@ -44,7 +44,7 @@ obj/main.o : src/main.c includes/thread.h includes/collector.h
 	$(CC) $(CFLAGS) -c $< -o obj/main.o
 
 clean:
-	-rm $(OBJ) $(EXE) *~ core
+	-rm $(OBJ) ./$(EXE)
 
 clean_sck:
 	rm $(SCK)

@@ -8,7 +8,8 @@ void* _malloc_(size_t size) {
         perror("ERRORE: malloc\n");
         exit(EXIT_FAILURE);
     }
-    return buffer;
+    else
+        return buffer;
 }
 
 int read_n(int fd, void *buf, size_t size) {

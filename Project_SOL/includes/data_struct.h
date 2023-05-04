@@ -10,7 +10,7 @@
 #define SCKNAME      "./farm.sck"
 #define SCKLEN       12
 
-typedef struct pool{
+typedef struct pool_t{
 	pthread_t     	*arr_th;
 	size_t 			n_th;
 	size_t			n_th_on_work;
@@ -18,13 +18,13 @@ typedef struct pool{
 	pthread_mutex_t sck_mutex;
 	pthread_mutex_t join_mutex;
 	pthread_cond_t  join_cond;
-} t_pool;
+} pool;
 
 typedef struct node{
     char 			*path;
     struct node 	*prec;
     struct node 	*next;
-}list;
+} list;
 
 typedef struct list_t{
 	pthread_mutex_t	list_mutex;
@@ -36,14 +36,14 @@ typedef struct list_t{
 	list		 	*header;
 	list 			*tailer;
 	int 			cond_term;
-}List;
+} List;
 
-typedef struct abr_{
+typedef struct abr_t{
 	size_t			len;
 	long 			res;
 	char 			*path;
-	struct abr_ 	*left;
-	struct abr_ 	*right;
-}abr;
+	struct abr_t 	*left;
+	struct abr_t 	*right;
+} abr;
 
 #endif

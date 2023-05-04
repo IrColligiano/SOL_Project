@@ -4,21 +4,21 @@
 #include <string.h>
 #include <thread.h>
 
+
 volatile sig_atomic_t term_for_sig;
-volatile sig_atomic_t print_for_sig;
-volatile sig_atomic_t count_print_for_sig;
 int exit_ = TRUE;
 pthread_t sig_handler_thread;
 sigset_t mask;
 int fd_skt; // sck
-struct sockaddr_un sa; 
-t_pool * th_pool = NULL;
+struct sockaddr_un sck_addr; 
+pool * th_pool = NULL;
 
-long result_from_path(char* path) {
+long result_from_file(char* path) {
     if(path == NULL) {
         errno = EINVAL;
         return -1;
     }
+
     FILE* fp =               NULL;
     if((fp = fopen(path, "rb")) == NULL) {
         fprintf(stderr,"ERRORE: fopen %s\n",path);
@@ -44,7 +44,7 @@ long result_from_path(char* path) {
 }
 
 int  thread_create(long number_th){
-    th_pool =               (t_pool*)_malloc_(sizeof(t_pool));
+    th_pool =               (pool*)_malloc_(sizeof(pool));
     th_pool->n_th =         (size_t)number_th;
     th_pool->arr_th =       (pthread_t*)_malloc_(sizeof(pthread_t)*(th_pool->n_th));
     th_pool->n_th_on_work = (size_t)number_th;
@@ -74,34 +74,36 @@ int  thread_create(long number_th){
     }
     return EXIT_SUCCESS;
 }
+
+
 int write_on_socket(char* path, long res, size_t len) {
     if(path == NULL) {
         errno = EINVAL;
         return -1;
     }
-    int w;
+    int s;
     errno = 0;
-    if ((w = write_n(fd_skt, &res, sizeof( long ))) < 0) {
+    if ((s = write_n(fd_skt, &res, sizeof( long ))) < 0) {
         perror("ERRORE: write_n result\n");
         return -1;
     }
-    if (w == 0) {
+    if (s == 0) {
         fprintf(stderr, "ERRORE: write_n result di %s\n", path);
         return 0;
     }
-    if ((w = write_n(fd_skt, &len, sizeof(size_t))) < 0) {
+    if ((s = write_n(fd_skt, &len, sizeof(size_t))) < 0) {
         perror("ERRORE: write_n len");
         return -1;
     }
-    if (w == 0){
+    if (s == 0){
         fprintf(stderr,"ERRORE: write_n len di %s\n", path);
         return 0;
     }
-    if ((w = write_n(fd_skt, path ,len)) < 0) {
+    if ((s = write_n(fd_skt, path ,len)) < 0) {
         perror("ERRORE: write_n pathname\n");
         return -1;
     }
-    if (w == 0) {
+    if (s == 0) {
         fprintf(stderr,"ERRORE: write_n pathname di %s\n", path); 
         return 0;
     }
@@ -109,15 +111,15 @@ int write_on_socket(char* path, long res, size_t len) {
 }
 
 int write_on_socket_print_request() {
-    int w;
+    int s;
     long n = -2;
     errno = 0;
     LOCK(&(th_pool->sck_mutex));
-    if ((w = write_n(fd_skt, &n, sizeof(long))) < 0){
+    if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
         UNLOCK(&(th_pool->sck_mutex));
         return -1;
     }
-    if (w == 0) {
+    if (s == 0) {
         UNLOCK(&(th_pool->sck_mutex));
         return 0;
     }
@@ -126,15 +128,15 @@ int write_on_socket_print_request() {
 }
 
 int write_on_socket_term_request(){
-    int w;
+    int s;
     long n = -1;
     errno = 0;
     LOCK(&(th_pool->sck_mutex));
-    if ((w = write_n(fd_skt, &n, sizeof(long))) < 0){
+    if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
         UNLOCK(&(th_pool->sck_mutex));
         return -1;
     }
-    if (w == 0) {
+    if (s == 0) {
         UNLOCK(&(th_pool->sck_mutex));
         return 0;
     }
@@ -145,34 +147,43 @@ int write_on_socket_term_request(){
 
 void * thread_work(void * arg){
     int exit_while = TRUE;
-    while(exit_while && term_for_sig){
+    while(exit_while){
         LOCK(&(Queue->list_mutex));
-        if(!(Queue->cond_term) && Queue->len == 0 ){
-            exit_ =      FALSE;
-            BCAST(&(Queue->list_cond));
-            exit_while = FALSE;
+        if( term_for_sig == FALSE){
+            if(/*!(Queue->cond_term) && */Queue->len == 0 ){
+                exit_ =      FALSE;
+                BCAST(&(Queue->list_cond));
+                exit_while = FALSE;
             }
+        }
+        else{
+            if((Queue->cond_term) == FALSE && Queue->len == 0 ){
+                exit_ =      FALSE;
+                BCAST(&(Queue->list_cond));
+                exit_while = FALSE;
+            }
+        }
         while(Queue->len==0 && exit_ && exit_while && term_for_sig){
             WAIT(&(Queue->list_cond),&(Queue->list_mutex));
         }
-        if(exit_ && exit_while && term_for_sig){
-            
-            int w =       0;
+        if(exit_ && exit_while){
+            int s =       0;
             long result=  0;
             char *buffer= _malloc_(sizeof(char)*PATHLEN);
             memset(buffer,'\0',PATHLEN);
-            delete_last_mod(&buffer);
-            SIGNAL(&(Queue->list_full_cond));
+            delete_last(&buffer);
+            //if(term_for_sig)
+                SIGNAL(&(Queue->list_full_cond));
             UNLOCK(&(Queue->list_mutex));
-            if((result = result_from_path(buffer)) == -1){
-                fprintf(stderr,"ERRORE: Lettura file\n");
+            if((result = result_from_file(buffer)) == -1){
+                perror("ERRORE: Lettura file\n");
                 free(buffer);
             }
             else{
-                size_t len=strnlen(buffer,PATHLEN-1);
                 LOCK(&(th_pool->sck_mutex));
-                if(( w = write_on_socket(buffer,result,len+1)) <= 0 ){
-                    fprintf(stderr,"ERRORE: Volevo scrivere %s %ld %ld\n",buffer,result,(len+1));
+                size_t len=strnlen(buffer,PATHLEN-1);
+                if(( s = write_on_socket(buffer,result,len+1)) <= 0 ){
+                    fprintf(stderr,"write on socket %s %ld %ld\n",buffer,result,(len+1));
                 }
                 free(buffer);
                 buffer=NULL;
@@ -188,8 +199,8 @@ void * thread_work(void * arg){
     LOCK(&(th_pool->join_mutex));
     th_pool->n_th_on_work --;
     if(th_pool->n_th_on_work <= 0){
-        int w;
-        if(( w = write_on_socket_term_request()) <= 0 ){
+        int s;
+        if(( s = write_on_socket_term_request()) <= 0 ){
             perror("ERRORE: write on socket term request\n");
         }
         SIGNAL(&(th_pool->join_cond));
@@ -214,15 +225,13 @@ int JOIN(pthread_t th ){
 
 
 void* signal_handler_thread_work(void* arg) {
-    print_for_sig=0;
-    count_print_for_sig=0;
     while(TRUE) {
         int signum;
         int err = sigwait(&mask , &signum);
         if(err != 0){
             return(void*)NULL;
         }
-	    switch(signum) {
+	    switch(signum){
 	        case SIGHUP: 
 	        case SIGINT:
 	        case SIGQUIT:
@@ -231,16 +240,15 @@ void* signal_handler_thread_work(void* arg) {
 	            return (void*)NULL;
             case SIGUSR1:
                 write_on_socket_print_request();
-                //print_for_sig +=1;
                 break;
-	        default: ; 
+	        default:; 
 	    }
     }
     return (void*)NULL;
 }
 
 void term_signal_handler() {
-    pthread_kill(sig_handler_thread, SIGQUIT);
+    pthread_kill(sig_handler_thread,SIGQUIT);
     JOIN(sig_handler_thread);
 }
 
@@ -249,7 +257,7 @@ int signal_handler_master() {
     memset(&signal_handler, 0, sizeof(signal_handler));
     signal_handler.sa_handler = SIG_IGN; 
     if(sigaction(SIGPIPE, &signal_handler , NULL) == -1) {
-        fprintf(stderr,"ERRORE: sigaction SIGPIPE\n");
+        perror("ERRORE: sigaction SIGPIPE\n");
         return EXIT_FAILURE;
     }
     sigemptyset(&mask);
@@ -259,12 +267,12 @@ int signal_handler_master() {
     sigaddset(&mask, SIGTERM);  
     sigaddset(&mask, SIGUSR1);  
     if(pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0) {
-        fprintf(stderr,"ERRORE: pthread_sigmask\n");
+        perror("ERRORE: pthread_sigmask\n");
         return EXIT_FAILURE;
     }
     if (pthread_create( &sig_handler_thread , NULL, signal_handler_thread_work, (void*) &mask ) != 0) {
         errno = EFAULT;
-        fprintf(stderr,"ERRORE: Creazione thread signal handler\n");
+        perror("ERRORE: creazione signal handler thread\n");
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
