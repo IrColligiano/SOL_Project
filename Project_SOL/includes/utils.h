@@ -2,44 +2,44 @@
 #define __UTILS_H__
 
 #define UNLOCK(l)                                               \
-    if (pthread_mutex_unlock(l)!=0){                            \
-        perror("ERRORE: unlock mutex\n");		                \
+    if (pthread_mutex_unlock(l) !=0){                           \
+        perror("ERRORE: mutex_unlock mutex error");		        \
         pthread_exit((void*)EXIT_FAILURE);				        \
     }
 
 #define LOCK(l)                                                 \
-    if (pthread_mutex_lock(l)!=0){                              \
-        perror("ERRORE: lock mutex\n");		                    \
+    if (pthread_mutex_lock(l) !=0){                             \
+        perror("ERRORE: mutex_lock mutex error");		        \
         pthread_exit((void*)EXIT_FAILURE);				        \
     }
 
 #define WAIT(c,l)                                               \
-    if (pthread_cond_wait(c,l)!=0){                             \
-        perror("ERRORE: wait cond\n");		                    \
+    if (pthread_cond_wait(c,l) !=0){                            \
+        perror("ERRORE: cond_wait cond error");		            \
         pthread_exit((void*)EXIT_FAILURE);				        \
     }
 
 #define SIGNAL(c)                                               \
-    if (pthread_cond_signal(c)!=0){	                            \
-        perror("ERRORE: signal\n");			                    \
+    if (pthread_cond_signal(c) !=0){	                        \
+        perror("ERRORE: cond_signal error");			        \
         pthread_exit((void*)EXIT_FAILURE);					    \
     }
 
 #define BCAST(c)                                                \
-    if (pthread_cond_broadcast(c)!=0){		                    \
-        perror("ERRORE: broadcast\n");			                \
+    if (pthread_cond_broadcast(c) !=0){		                    \
+        perror("ERRORE: cond_broadcast error");			        \
         pthread_exit((void*)EXIT_FAILURE);						\
     }
 
 #define DMUTEX(l)                                               \
-    if (pthread_mutex_destroy(l)!=0){                           \
-        perror("ERRORE: mutex destroy\n");                      \
+    if (pthread_mutex_destroy(l) !=0){                          \
+        perror("ERRORE: mutex_destroy error");                  \
         return 0;                                               \
     }
 
 #define DCOND(c)                                                \
-    if (pthread_cond_destroy(c)!=0){                            \
-        perror("ERRORE: cond destroy\n");                       \
+    if (pthread_cond_destroy(c) !=0){                           \
+        perror("ERRORE: cond_destroy error");                   \
         return 0;                                               \
     }
 
@@ -60,7 +60,6 @@
 //esegue una malloc e restituisce il puntatore void *
 void * _malloc_(size_t size);
 
-//
 int write_n(int fd, void *buf, size_t size);
 
 int read_n(int fd, void *buf, size_t size);

@@ -4,11 +4,14 @@
 #include <string.h>
 #include <thread.h>
 
-
-volatile sig_atomic_t term_for_sig;
-int exit_ = TRUE;
-pthread_t sig_handler_thread;
-sigset_t mask;
+pthread_attr_t tattr;// attributi del signal handler
+volatile sig_atomic_t count_print_request; // variabile che indica quante print request sono state gestite
+volatile sig_atomic_t print_request;// variabile che indica quante print request sono arrivate da SIGUSR1
+volatile sig_atomic_t is_connected = TRUE;
+volatile sig_atomic_t term_for_sig = TRUE;
+int exit_ = TRUE; // variabile che indica lo stato di terminazione dei thread
+pthread_t sig_handler_thread; 
+sigset_t mask; // masckera per il signal handler
 int fd_skt; // sck
 struct sockaddr_un sck_addr; 
 pool * th_pool = NULL;
@@ -18,10 +21,9 @@ long result_from_file(char* path) {
         errno = EINVAL;
         return -1;
     }
-
     FILE* fp =               NULL;
     if((fp = fopen(path, "rb")) == NULL) {
-        fprintf(stderr,"ERRORE: fopen %s\n",path);
+        perror("ERRORE: fopen error");
         return -1;
     }
     size_t n_byte =          0;
@@ -31,7 +33,7 @@ long result_from_file(char* path) {
     long x =                 0;
     while((n_byte = fread(&x , sizeof(long), n_byte_for_time , fp)) == 1) {
         res = res +(x * i);
-        i++;
+        i ++;
     }
     if(feof(fp)){
         fclose(fp);
@@ -50,24 +52,19 @@ int  thread_create(long number_th){
     th_pool->n_th_on_work = (size_t)number_th;
     errno=0;
     if( pthread_mutex_init(&(th_pool->join_mutex),NULL) != 0){
-        perror("ERRORE: Inizializzazione variabile di mutex\n");
+        perror("ERRORE: Inizializzazione variabile di mutex error");
         errno = EINVAL;
         return EXIT_FAILURE;
     }
     if( pthread_mutex_init(&(th_pool->sck_mutex),NULL) != 0){
-        perror("ERRORE: Inizializzazione variabile di mutex\n");
-        errno = EINVAL;
-        return EXIT_FAILURE;
-    }
-    if( pthread_cond_init(&(th_pool->join_cond),NULL) != 0){
-        perror("ERRORE: Inizializzazione variabile di condizione\n");
+        perror("ERRORE: Inizializzazione variabile di mutex error");
         errno = EINVAL;
         return EXIT_FAILURE;
     }
     for(int i = 0; i < th_pool->n_th; i++){
         int err;
         if((err = pthread_create(&(th_pool->arr_th[i]) , NULL , &thread_work , NULL) != 0) ){
-            perror("ERRORE: creazione thread\n");
+            perror("ERRORE: creazione thread error");
             errno=EFAULT;
             return EXIT_FAILURE;
         }
@@ -84,27 +81,27 @@ int write_on_socket(char* path, long res, size_t len) {
     int s;
     errno = 0;
     if ((s = write_n(fd_skt, &res, sizeof( long ))) < 0) {
-        perror("ERRORE: write_n result\n");
+        perror("ERRORE: write_n result error");
         return -1;
     }
     if (s == 0) {
-        fprintf(stderr, "ERRORE: write_n result di %s\n", path);
+        perror("ERRORE: write_n result error");
         return 0;
     }
     if ((s = write_n(fd_skt, &len, sizeof(size_t))) < 0) {
-        perror("ERRORE: write_n len");
+        perror("ERRORE: write_n len error");
         return -1;
     }
     if (s == 0){
-        fprintf(stderr,"ERRORE: write_n len di %s\n", path);
+        perror("ERRORE: write_n len error");
         return 0;
     }
     if ((s = write_n(fd_skt, path ,len)) < 0) {
-        perror("ERRORE: write_n pathname\n");
+        perror("ERRORE: write_n pathname error");
         return -1;
     }
     if (s == 0) {
-        fprintf(stderr,"ERRORE: write_n pathname di %s\n", path); 
+        perror("ERRORE: write_n pathname error"); 
         return 0;
     }
     return 1;
@@ -114,16 +111,14 @@ int write_on_socket_print_request() {
     int s;
     long n = -2;
     errno = 0;
-    LOCK(&(th_pool->sck_mutex));
     if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
-        UNLOCK(&(th_pool->sck_mutex));
+        perror("ERRORE: write_on_socket_print_request error");
         return -1;
     }
     if (s == 0) {
-        UNLOCK(&(th_pool->sck_mutex));
+        perror("ERRORE: write_on_socket_print_request error");
         return 0;
     }
-    UNLOCK(&(th_pool->sck_mutex));
     return 1;
 }
 
@@ -133,10 +128,12 @@ int write_on_socket_term_request(){
     errno = 0;
     LOCK(&(th_pool->sck_mutex));
     if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
+        perror("ERRORE: write_on_socket_term_request error");
         UNLOCK(&(th_pool->sck_mutex));
         return -1;
     }
     if (s == 0) {
+        perror("ERRORE: write_on_socket_term_request error");
         UNLOCK(&(th_pool->sck_mutex));
         return 0;
     }
@@ -148,46 +145,52 @@ int write_on_socket_term_request(){
 void * thread_work(void * arg){
     int exit_while = TRUE;
     while(exit_while){
+
         LOCK(&(Queue->list_mutex));
-        if( term_for_sig == FALSE){
-            if(/*!(Queue->cond_term) && */Queue->len == 0 ){
+        if( term_for_sig == FALSE && Queue->len == 0 ){
                 exit_ =      FALSE;
                 BCAST(&(Queue->list_cond));
                 exit_while = FALSE;
-            }
         }
+
         else{
-            if((Queue->cond_term) == FALSE && Queue->len == 0 ){
+            if( Queue->cond_term == FALSE && Queue->len == 0 ){
                 exit_ =      FALSE;
                 BCAST(&(Queue->list_cond));
                 exit_while = FALSE;
             }
         }
-        while(Queue->len==0 && exit_ && exit_while && term_for_sig){
+
+        while( Queue->len == 0 && exit_ && exit_while && term_for_sig )
             WAIT(&(Queue->list_cond),&(Queue->list_mutex));
-        }
+
         if(exit_ && exit_while){
             int s =       0;
-            long result=  0;
-            char *buffer= _malloc_(sizeof(char)*PATHLEN);
-            memset(buffer,'\0',PATHLEN);
+            long result = 0;
+            size_t len =  Queue->tail->lenght;
+            char *buffer= _malloc_(sizeof(char) * (len+1));
+            memset(buffer,'\0',len+1);
             delete_last(&buffer);
-            //if(term_for_sig)
+            if(term_for_sig)
                 SIGNAL(&(Queue->list_full_cond));
             UNLOCK(&(Queue->list_mutex));
             if((result = result_from_file(buffer)) == -1){
-                perror("ERRORE: Lettura file\n");
+                perror("ERRORE: result_from_file error");
                 free(buffer);
             }
             else{
                 LOCK(&(th_pool->sck_mutex));
-                size_t len=strnlen(buffer,PATHLEN-1);
-                if(( s = write_on_socket(buffer,result,len+1)) <= 0 ){
-                    fprintf(stderr,"write on socket %s %ld %ld\n",buffer,result,(len+1));
+                while(print_request > count_print_request){
+                    count_print_request = count_print_request + 1;
+                    if(( s = write_on_socket_print_request()) <= 0)
+                        fprintf(stderr,"write_on_scocket_print_request number %d\n",count_print_request);
                 }
+                if(( s = write_on_socket(buffer,result,len+1)) <= 0 ){
+                    fprintf(stderr,"write_on_socket %s %ld %ld\n",buffer,result,(len+1));
+                }
+                UNLOCK(&(th_pool->sck_mutex));
                 free(buffer);
                 buffer=NULL;
-                UNLOCK(&(th_pool->sck_mutex));
             }
         }
         else{
@@ -200,10 +203,8 @@ void * thread_work(void * arg){
     th_pool->n_th_on_work --;
     if(th_pool->n_th_on_work <= 0){
         int s;
-        if(( s = write_on_socket_term_request()) <= 0 ){
-            perror("ERRORE: write on socket term request\n");
-        }
-        SIGNAL(&(th_pool->join_cond));
+        if(( s = write_on_socket_term_request()) <= 0 )
+            perror("ERRORE: write_on_socket_term_request error\n");
     }
     UNLOCK(&(th_pool->join_mutex));
     return (void*)NULL;
@@ -215,7 +216,7 @@ int JOIN(pthread_t th ){
     errno = 0;
     if(pthread_join(th,NULL) != 0){
         if(errno==EDEADLK || errno == EINVAL || errno==ESRCH){
-            perror("ERRORE: join\n");
+            perror("ERRORE: join error");
             return EXIT_FAILURE;
         }
     }
@@ -225,10 +226,13 @@ int JOIN(pthread_t th ){
 
 
 void* signal_handler_thread_work(void* arg) {
+    count_print_request = 0;
+    print_request =       0;
     while(TRUE) {
         int signum;
         int err = sigwait(&mask , &signum);
         if(err != 0){
+            errno = EINVAL;
             return(void*)NULL;
         }
 	    switch(signum){
@@ -237,19 +241,17 @@ void* signal_handler_thread_work(void* arg) {
 	        case SIGQUIT:
 	        case SIGTERM:
 	            term_for_sig = FALSE;
-	            return (void*)NULL;
+	            break;
             case SIGUSR1:
-                write_on_socket_print_request();
+                if(!is_connected)
+                    print_request = print_request + 1;
                 break;
+            case SIGUSR2:
+                return (void*)NULL;
 	        default:; 
 	    }
     }
     return (void*)NULL;
-}
-
-void term_signal_handler() {
-    pthread_kill(sig_handler_thread,SIGQUIT);
-    JOIN(sig_handler_thread);
 }
 
 int signal_handler_master() {
@@ -257,22 +259,62 @@ int signal_handler_master() {
     memset(&signal_handler, 0, sizeof(signal_handler));
     signal_handler.sa_handler = SIG_IGN; 
     if(sigaction(SIGPIPE, &signal_handler , NULL) == -1) {
-        perror("ERRORE: sigaction SIGPIPE\n");
+        perror("ERRORE: sigaction SIGPIPE error");
         return EXIT_FAILURE;
     }
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGHUP);
-    sigaddset(&mask, SIGINT);   
-    sigaddset(&mask, SIGQUIT);  
-    sigaddset(&mask, SIGTERM);  
-    sigaddset(&mask, SIGUSR1);  
+    if(sigemptyset(&mask) != 0){
+        errno = EINVAL;
+        perror("ERRORE: sigemptyset error");
+        return EXIT_FAILURE;
+    }
+    if(sigaddset(&mask, SIGHUP) != 0){
+        errno = EINVAL;
+        perror("ERRORE: sigaddset SIGHUP error");
+        return EXIT_FAILURE;
+    }
+    if(sigaddset(&mask, SIGINT) != 0){
+        errno = EINVAL;
+        perror("ERRORE: sigaddset SIGINT error");
+        return EXIT_FAILURE;
+    }   
+    if(sigaddset(&mask, SIGQUIT) != 0){
+        errno = EINVAL;
+        perror("ERRORE: sigaddset SIGQUIT error");
+        return EXIT_FAILURE;
+    }  
+    if(sigaddset(&mask, SIGTERM) != 0){
+        errno = EINVAL;
+        perror("ERRORE: sigaddset SIGTERM error");
+        return EXIT_FAILURE;
+    }  
+    if(sigaddset(&mask, SIGUSR1) != 0){
+        errno = EINVAL;
+        perror("ERRORE: sigaddset SIGUSR1 error");
+        return EXIT_FAILURE;
+    }
+    if(sigaddset(&mask, SIGUSR2) != 0){
+        errno = EINVAL;
+        perror("ERRORE: sigaddset SIGUSR2 error");
+        return EXIT_FAILURE;
+    }  
     if(pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0) {
-        perror("ERRORE: pthread_sigmask\n");
+        errno = EINVAL;
+        perror("ERRORE: pthread_sigmask error");
         return EXIT_FAILURE;
     }
-    if (pthread_create( &sig_handler_thread , NULL, signal_handler_thread_work, (void*) &mask ) != 0) {
+    if (pthread_attr_init(&tattr)!= 0) {
+        errno = ENOMEM;
+        perror("ERRORE: pthread_attr_init error");
+        return EXIT_FAILURE;
+    }
+    if (pthread_attr_setdetachstate(&tattr , PTHREAD_CREATE_DETACHED) != 0) {
+        errno = EINVAL;
+        perror("ERRORE: pthread_attr_setdetachstate error");
+        return EXIT_FAILURE;
+    }
+    if (pthread_create(&sig_handler_thread, &tattr, signal_handler_thread_work,(void*) NULL ) != 0) {
         errno = EFAULT;
-        perror("ERRORE: creazione signal handler thread\n");
+        perror("ERRORE: pthread_create signal handler thread error");
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

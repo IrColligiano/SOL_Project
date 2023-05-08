@@ -3,7 +3,7 @@
 
 #include <utils.h>
 
-List * Queue;
+list * Queue;
 
 //inizializza i valori della lista
 int init_list(long n,long msec);
@@ -16,8 +16,7 @@ int head_insert(char n[], size_t len);
 //stampa la lista
 void print_list();
 
-//elimina l ultimo elemnto della lista e restituisce:
-//il path dell elemento eliminato,'\0'se non e stato elimanto 
+//elimina l ultimo elemento della lista e modifica la stringa ret
 void delete_last(char ** ret);
 
 //elimina la lista;

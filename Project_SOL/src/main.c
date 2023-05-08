@@ -34,11 +34,8 @@ int is_regular_file(const char *path);
 // verifica che il pathname sia una directory
 int is_directory(const char *path);
 
-
-
 int fd_skt;                                      // fd della socket
-struct sockaddr_un sck_addr;
-volatile sig_atomic_t term_for_sig = TRUE;       // variabile che modifica signal handler per terminare in caso di segnale
+struct sockaddr_un sck_addr;                    
 long Nthread =                       NTHREADDEF; // variabile del numero di thread
 long Qlen =                          QLENDEF;    //variabile per la lunghezza della coda
 long Tdelay =                        TDELAYDEF;  //variabile per i ms
@@ -50,26 +47,30 @@ char *DirectoryName =                NULL;       //puntatore ca char che conterr
 int main(int argc,char *argv[]){
     // controllo che ci sia almeno un argomento in argc 
     if(argc < 2){
-        fprintf(stderr,"ERRORE: Troppi pochi argomenti in ingresso\n");
+        fprintf(stderr,"ERRORE: pochi argomenti in input\n");
         return EXIT_FAILURE;
     }
 //_________________fork___________________//
     pid_t pid;//pid 
     if((pid = fork()) == -1) {
-    	perror("ERRORE: Fork\n");
+    	perror("ERRORE: fork error");
         return EXIT_FAILURE;
     }
 //____________________collector____________________//
 
-    if(pid == 0){ // figlio che rappresenta il collector 
+    if(pid == 0){ // figlio che rappresenta il collector ed il server
         if(collector_main() != EXIT_SUCCESS){
-            perror("ERRORE: return collector\n");
+            perror("ERRORE: return collector error");
             return EXIT_FAILURE;
         }
     }
 //____________________master worker____________________//
 
-    if(pid != 0){ // processo master che rappresenta il main
+    if(pid != 0){ // processo master che rappresenta il main ed il client
+        if(signal_handler_master() !=0 ){
+            perror("ERRORE: signal_handler_master error");
+            return EXIT_FAILURE;
+        }
         int opt; // variabile per la gestione dello switch da parte di getopt
         long tmp; // variabile temporanea
         int opt_n=0;
@@ -79,7 +80,7 @@ int main(int argc,char *argv[]){
         char*a=NULL; //puntatore char di appoggio per getopt ed altre funzioni del main
         while((opt = getopt(argc, argv, "n:q:d:t:")) != -1){
             switch (opt){
-//-n <nthread> specifica il numero di thread Worker del processo MasterWorker (valore di default 4)
+
             case 'n': 
                 opt_n++;
                 if(opt_n > 1){
@@ -95,7 +96,7 @@ int main(int argc,char *argv[]){
                     //fprintf(stdout,"Numero di threads impostato a: %ld\n",Nthread);
                 }     
                 break;
-//-q <qlen> specifica la lunghezza della coda concorrente tra il thread Master ed i thread Worker (valore di default 8)
+
             case 'q':
                 opt_q++;
                 if(opt_q > 1){
@@ -111,8 +112,7 @@ int main(int argc,char *argv[]){
                     //fprintf(stdout,"Lunghezza coda concorrente impostato a: %ld\n",Qlen);                    
                 }     
                 break;
-//-d <directory-name> specifica una directory in cui sono contenuti file binari ed eventualmente altre directory
-//   contenente file binari, i file binari dovranno essere utilizzati come file di input per il calcolo;
+
             case 'd':
                 opt_d++;
                 if(opt_d > 1){
@@ -129,8 +129,7 @@ int main(int argc,char *argv[]){
                     //fprintf(stdout,"Directory %s\n",DirectoryName);
                 }
                 break;
-//-t <delay> specifica un tempo in millisecondi che intercorre tra l’invio di due richieste 
-//   successive ai thread Worker da parte del thread Master (valore di default 0)
+
             case 't':
                 opt_t++;
                 if(opt_t > 1){
@@ -151,37 +150,31 @@ int main(int argc,char *argv[]){
         }
         memset(&sck_addr, 0, sizeof(sck_addr));
         sck_addr.sun_family = AF_UNIX;
-        strncpy(sck_addr.sun_path, SCKNAME ,SCKLEN-1);
+        strncpy(sck_addr.sun_path, SCKNAME ,SCKLEN);
         if((fd_skt = socket(AF_UNIX, SOCK_STREAM, 0)) ==-1){
-            perror("ERRORE: socket master\n");
-            errno = EINVAL;
+            perror("ERRORE: socket master error");
             return EXIT_FAILURE;
         }
-        //fprintf(stdout,"socket client\n");
         int err;
         my_nanosleep(1);
         while ( (err = connect( fd_skt, (struct sockaddr*)&sck_addr , sizeof(sck_addr) ) ) == -1 ){
             if ( errno == ENOENT ) 
                 my_nanosleep(1000);
             else{
-                perror("ERRORE: connect master\n");
+                perror("ERRORE: connect master error");
                 return EXIT_FAILURE;
             }
         }
-        //fprintf(stdout,"connect master\n");
-        if(signal_handler_master() !=0 ){
-            free(DirectoryName);
-            return EXIT_FAILURE;
-        }
+        is_connected = FALSE;
         if(init_list(Qlen,Tdelay) != 0){
+            fprintf(stderr,"ERRORE: init_list\n");
             free(DirectoryName);
-            perror("ERRORE: inizializzazione coda concorrente\n");
             return EXIT_FAILURE;
         }
         
         if(thread_create(Nthread) != 0){
             free(DirectoryName);
-            perror("ERRORE: creazione thread worker\n");
+            fprintf(stderr,"ERRORE: thread_create\n");
             return EXIT_FAILURE;
         }
 //__________________inizio inserimento file in coda________________________//
@@ -199,13 +192,6 @@ int main(int argc,char *argv[]){
             UNLOCK(&(Queue->list_mutex));
             j--;
         }
-        
-        /*
-        pid_t pid2;
-        pid2=getpid();
-        kill(pid2,SIGQUIT);
-        */
-
 //______________________inizio inserimento dir in coda________________//
         if(DirectoryName != NULL){
             if(term_for_sig)
@@ -214,45 +200,26 @@ int main(int argc,char *argv[]){
             DirectoryName=NULL;
         }
 //______________________aspetto thread che terminino__________________//
-
         Queue->cond_term=FALSE;
-        LOCK(&(th_pool->join_mutex));
-        while(th_pool->n_th_on_work > 0){
-            WAIT(&(th_pool->join_cond),&(th_pool->join_mutex));   
-        }
-        UNLOCK(&(th_pool->join_mutex));
-        //fprintf(stdout,"MASTER: sveglo\n");
         for(j = 0 ; j < th_pool->n_th ; j++){
-            if( JOIN((th_pool->arr_th[j])) == EXIT_FAILURE){
+            if( JOIN((th_pool->arr_th[j])) == EXIT_FAILURE)
                 return EXIT_FAILURE;
-            }
         }
-//_______________________termino sig_handler sck e libero risorse____________//
+//___________termino sig_handler chiudo socket e libero risorse____________//
         free_resource();
-        term_signal_handler();
-        close(fd_skt);   
-        waitpid(-1, NULL, 0);
-        //fprintf(stdout,"MASTER: close\n");
+        if(pthread_kill(sig_handler_thread,SIGUSR2) != 0){
+            perror("ERRORE: pthread_kill error");
+            return EXIT_FAILURE;
+        }
+        if(close(fd_skt) != 0){
+            perror("ERRORE: close error");
+            return EXIT_FAILURE;
+        }
+        if(waitpid(0, NULL, 0) == -1){
+            perror("ERRORE: waitpid error");
+            return EXIT_FAILURE;
+        }
     }
-    Queue = NULL;
-    th_pool = NULL;
-    return EXIT_SUCCESS;
-}
-
-int free_resource(){
-    DMUTEX(&(th_pool->sck_mutex));
-    DMUTEX(&(th_pool->join_mutex));
-    DMUTEX(&(Queue->list_mutex));
-    DCOND(&(th_pool->join_cond));
-    DCOND(&(Queue->list_cond));
-    DCOND(&(Queue->list_full_cond));
-    free(th_pool->arr_th);
-    th_pool->arr_th = NULL;
-    free(th_pool);
-    th_pool = NULL;
-    free_list();
-    free(Queue);
-    Queue = NULL;
     return EXIT_SUCCESS;
 }
 
@@ -295,21 +262,21 @@ void list_files_recursively(char *basePath){
     struct dirent *dp = NULL;
     char slash[2]={'/','\0'};
     DIR *dir = opendir(basePath);
-    if(dir==NULL){
+    if(dir == NULL){
         return;
     }
     while ((dp = readdir(dir)) != NULL && term_for_sig){
         if(errno == EBADF){
-            perror("ERRORE: readdir\n");
+            perror("ERRORE: readdir error");
             closedir(dir);
             return;
         }
-        namelen=strnlen(dp->d_name,PATHLEN-1);
+        namelen = strnlen(dp->d_name,PATHLEN-1);
         if (strcmp(dp->d_name,".") != 0 && strcmp(dp->d_name, "..") != 0){
-            pathlen=strnlen(path,PATHLEN-1);
+            pathlen = strnlen(path,PATHLEN-1);
             if ( !(pathlen + basepathlen + namelen >= PATHLEN ) ){
                 if( dp->d_type == DT_REG && !(basepathlen + namelen  >= PATHLEN) ){
-                    strncpy(fullpath,basePath,PATHLEN-1);
+                    strncpy(fullpath,basePath,basepathlen);
                     strncat(fullpath,slash,1);
                     strncat(fullpath,dp->d_name,namelen);
                     if(is_regular_file(fullpath) !=0 && term_for_sig){
@@ -319,7 +286,7 @@ void list_files_recursively(char *basePath){
                         }
                         if(term_for_sig){
                             if( my_nanosleep(Queue->msec) == -1)
-                                perror("ERRORE: nanosleep\n");
+                                perror("ERRORE: nanosleep error");
                             size_t len = strnlen(fullpath,PATHLEN-1);
                             head_insert(fullpath, len);
                             SIGNAL(&(Queue->list_cond));
@@ -328,7 +295,7 @@ void list_files_recursively(char *basePath){
                     }
                     memset(fullpath,'\0',PATHLEN);
                 }
-                strncpy(path, basePath,PATHLEN-1);
+                strncpy(path, basePath, pathlen);
                 strncat(path, slash,1);
                 strncat(path, dp->d_name,namelen);
                 list_files_recursively(path);
@@ -336,7 +303,7 @@ void list_files_recursively(char *basePath){
         }
     }
     if(closedir(dir) == -1)
-        perror("ERRORE: closedir\n");
+        perror("ERRORE: closedir error");
     return;
 }
 
@@ -379,4 +346,20 @@ char* arg_char_dir(char * n){
     else{ // opendir() ha fallito per altri motivi
         return NULL;
     }
+}
+
+int free_resource(){
+    DMUTEX(&(th_pool->sck_mutex));
+    DMUTEX(&(th_pool->join_mutex));
+    DMUTEX(&(Queue->list_mutex));
+    DCOND(&(Queue->list_cond));
+    DCOND(&(Queue->list_full_cond));
+    free(th_pool->arr_th);
+    th_pool->arr_th = NULL;
+    free(th_pool);
+    th_pool = NULL;
+    free_list();
+    free(Queue);
+    Queue = NULL;
+    return EXIT_SUCCESS;
 }

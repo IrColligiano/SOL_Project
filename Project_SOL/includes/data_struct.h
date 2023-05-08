@@ -1,15 +1,16 @@
 #ifndef __DATA_STRUCT__
 #define __DATA_STRUCT__
 
-#define PATHLEN      257 // lunghezza path
+#define PATHLEN      256 // lunghezza path
 #define NTHREADDEF   4   //valore default numero thread
 #define QLENDEF      8   //valore default lunghezza lista
 #define TDELAYDEF    0   //valore default tempo ms
 #define TRUE         1   //TRUE
 #define FALSE        0	 //FALSE
-#define SCKNAME      "./farm.sck"
-#define SCKLEN       12
+#define SCKNAME      "./farm.sck" // nome socket
+#define SCKLEN       11 // lunghezza nome socket
 
+//struct che descrive la threadpool
 typedef struct pool_t{
 	pthread_t     	*arr_th;
 	size_t 			n_th;
@@ -17,15 +18,17 @@ typedef struct pool_t{
 	int 			skt;
 	pthread_mutex_t sck_mutex;
 	pthread_mutex_t join_mutex;
-	pthread_cond_t  join_cond;
 } pool;
 
-typedef struct node{
+//struct che descrive un nodo della coda concorrente
+typedef struct node_t{
+	size_t          lenght;
     char 			*path;
-    struct node 	*prec;
-    struct node 	*next;
-} list;
+    struct node_t 	*prec;
+    struct node_t 	*next;
+} node;
 
+//struct che descrive la coda concorrente
 typedef struct list_t{
 	pthread_mutex_t	list_mutex;
 	pthread_cond_t	list_cond;
@@ -33,11 +36,12 @@ typedef struct list_t{
 	long 			msec;
 	size_t		 	len;
 	size_t 			max_len;
-	list		 	*header;
-	list 			*tailer;
+	node		 	*head;
+	node 			*tail;
 	int 			cond_term;
-} List;
+} list;
 
+//struct che descrive l abr
 typedef struct abr_t{
 	size_t			len;
 	long 			res;

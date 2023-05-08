@@ -3,8 +3,9 @@
 
 #include <tree.h>
 
+// legge dalla socket connessa con il master 
 int read_from_socket();
-
+// funzione che rappresenta il main del collector
 int collector_main();
 
 #endif
