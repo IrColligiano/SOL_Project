@@ -19,9 +19,9 @@ int JOIN(pthread_t th );
 // esegue il calcolo del risultato letto 8 byte alla volta dal file passato
 long result_from_file(char* pathname);
 //acquisisce la lock e scrive -1 sulla socket per far stampare al collector
-int write_on_socket_print_request();
+int write_on_socket_sigusr1();
 // acquisice la lock e scrive -2 sulla socket per far terminare il collector
-int write_on_socket_term_request();
+int write_on_socket_finish();
 // scriver sulla socket nome file risultato e kunghezza della stringa nome file
 int write_on_socket(char* path, long res, size_t len);
 // inizializza la threadpool e lancia i thread worker

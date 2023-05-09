@@ -22,11 +22,11 @@ int read_from_socket() {
 		perror("ERRORE: read_n result error\n");
 		return -1;
 	}
-    if(res == -2){ // caso in cui arriva sigurs1 e devo stampare
+    if(res == -SIGUSR1){ // caso in cui arriva sigurs1 e devo stampare
         print_tree(root);
         return 1;
     }
-    if(res == -1){// caso in cui devo terminare nomralmente oppure e' arrivato un segnale
+    if(res == -SIGTERM){// caso in cui devo terminare odinariamnete oppure e' arrivato un segnale di terminazione
         return 2;
     }
 	if( (l = read_n(fd_c, &len, sizeof(size_t))) != sizeof(size_t) ) {

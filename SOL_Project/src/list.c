@@ -30,7 +30,7 @@ int init_list(long n, long msec){
 	return EXIT_SUCCESS;
 }
 
-int head_insert(char n[], size_t len){
+int head_insertion(char n[], size_t len){
 	if(Queue->len >= Queue->max_len)
 		return -1;
 	node * new = _malloc_(sizeof(node));

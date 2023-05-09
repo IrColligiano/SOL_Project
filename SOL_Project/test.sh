@@ -11,8 +11,6 @@ then
     exit 1
 fi
 
-
-
 #
 # il file expected.txt contiene i risultati attesi per i file
 # generati nel seguito con il programma generafile
@@ -86,7 +84,6 @@ if [[ $? != 0 ]]; then
 else
     echo "test3 passed"
 fi
-
 
 #
 # esecuzione con valgrind. Se valgrind trova dei problemi esce con 

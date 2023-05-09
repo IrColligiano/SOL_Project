@@ -41,7 +41,6 @@ long Qlen =                          QLENDEF;    //variabile per la lunghezza de
 long Tdelay =                        TDELAYDEF;  //variabile per i ms
 char *DirectoryName =                NULL;       //puntatore ca char che conterra il nome della directory
 
-
 //____________________MAIN____________________//
 
 int main(int argc,char *argv[]){
@@ -124,8 +123,6 @@ int main(int argc,char *argv[]){
                     fprintf(stderr,"ERRORE: La directory specificata non e' valida o non esiste\n");
                 }
                 else{
-                    DirectoryName = _malloc_(sizeof(char)*PATHLEN);
-                    strncpy(DirectoryName,a,PATHLEN-1);
                     //fprintf(stdout,"Directory %s\n",DirectoryName);
                 }
                 break;
@@ -165,7 +162,6 @@ int main(int argc,char *argv[]){
                 return EXIT_FAILURE;
             }
         }
-        is_connected = FALSE;
         if(init_list(Qlen,Tdelay) != 0){
             fprintf(stderr,"ERRORE: init_list\n");
             free(DirectoryName);
@@ -179,17 +175,19 @@ int main(int argc,char *argv[]){
         }
 //__________________inizio inserimento file in coda________________________//
         int j = argc-1;
-        while(j > 0 && term_for_sig && (is_regular_file(argv[j]) !=0)){
-            LOCK(&(Queue->list_mutex));
-            while(Queue->len >= Queue->max_len && term_for_sig)
-                WAIT(&(Queue->list_full_cond),&(Queue->list_mutex));
-            if(term_for_sig){
-                my_nanosleep(Queue->msec);
+        while(j > 0 && term_for_sig){
+            if(is_regular_file(argv[j]) !=0){
+                LOCK(&(Queue->list_mutex));
+                while(Queue->len >= Queue->max_len && term_for_sig)
+                    WAIT(&(Queue->list_full_cond),&(Queue->list_mutex));
                 size_t len = strlen(argv[j]);
-                head_insert(argv[j],len);
-                SIGNAL(&(Queue->list_cond));
+                if(term_for_sig && len < PATHLEN-1){
+                    my_nanosleep(Queue->msec);
+                    head_insertion(argv[j],len);
+                    SIGNAL(&(Queue->list_cond));
+                }
+                UNLOCK(&(Queue->list_mutex));
             }
-            UNLOCK(&(Queue->list_mutex));
             j--;
         }
 //______________________inizio inserimento dir in coda________________//
@@ -226,7 +224,7 @@ int main(int argc,char *argv[]){
 int my_nanosleep(long msec){
     struct timespec ts;
     int res;
-    errno=0;
+    errno = 0;
     if (msec < 0){
         errno = EINVAL;
         return -1;
@@ -263,6 +261,8 @@ void list_files_recursively(char *basePath){
     char slash[2]={'/','\0'};
     DIR *dir = opendir(basePath);
     if(dir == NULL){
+        if(errno != ENOTDIR && errno != ENOENT)
+            perror("ERRORE: opendir error");
         return;
     }
     while ((dp = readdir(dir)) != NULL && term_for_sig){
@@ -288,7 +288,7 @@ void list_files_recursively(char *basePath){
                             if( my_nanosleep(Queue->msec) == -1)
                                 perror("ERRORE: nanosleep error");
                             size_t len = strnlen(fullpath,PATHLEN-1);
-                            head_insert(fullpath, len);
+                            head_insertion(fullpath, len);
                             SIGNAL(&(Queue->list_cond));
                         }
                         UNLOCK(&(Queue->list_mutex));
@@ -308,12 +308,12 @@ void list_files_recursively(char *basePath){
 }
 
 int isNumber(const char* s, long* tmp){
-    if (s==NULL) 
+    if (s == NULL) 
         return 1;
-    if (strnlen(s,PATHLEN)==0) 
+    if (strnlen(s,PATHLEN-1) == 0) 
         return 1; 
-    char* e = NULL;
-    errno=0;
+    char* e =  NULL;
+    errno =    0;
     long val = strtol(s, &e, 10); //strtol converte stringhe in long integer
     if (errno == ERANGE)
         return 2; // overflow
@@ -325,19 +325,25 @@ int isNumber(const char* s, long* tmp){
 }
 
 long arg_int(const char* n){
-    long tmp=0; //variabile temporanea che mi raccoglie il long gestito da isNumber
-    if (isNumber(n , &tmp) != 0 && tmp<0)
+    long tmp = 0; //variabile temporanea che mi raccoglie il long gestito da isNumber
+    if (isNumber(n , &tmp) != 0 && tmp < 0)
         return -1;
     else
         return tmp; 
 }
 
 char* arg_char_dir(char * n){
-    errno=0;
-    DIR *dir=NULL;
-    dir = opendir(n);
+    errno =    0;
+    DIR *dir = NULL;
+    dir =      opendir(n);
     if (dir){ // la directory esiste
         closedir(dir);
+        size_t len = strlen(n);
+        if(len > PATHLEN -1)
+            return NULL;
+        DirectoryName = _malloc_(sizeof(char) * (len+1));
+        memset(DirectoryName,'\0',len+1);
+        strncpy(DirectoryName,n,len);
         return n;
     }
     if (ENOENT == errno){ //la directory non esiste

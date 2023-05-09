@@ -12,19 +12,19 @@ Q = -q 8
 
 N = -n 4
 
-T = -t 100
+T = -t 1000
 
 D = -d testdir
 
 DIR = testdir
 
-SHELL = /bin/bash
+#SHELL = /bin/bash
 
 FILE = file1.dat file2.dat file3.dat file4.dat file5.dat file10.dat file12.dat file13.dat file14.dat file15.dat file16.dat file17.dat file18.dat file20.dat file100.dat file116.dat file117.dat
 
 OBJ = obj/main.o obj/utils.o obj/list.o obj/thread.o obj/tree.o obj/collector.o
 
-.PHONY : clean exec valg cleanall test generafile
+.PHONY : clean exec valg cleanall test generafile mytest
  
 $(EXE) : $(OBJ)
 	$(CC) $(CFLAGS) $^ -o $(EXE)
@@ -63,6 +63,10 @@ cleanall :
 test: farm
 	@chmod +x ./test.sh
 	./test.sh
+
+mytest: farm
+	@chmod +x ./mytest.sh
+	./mytest.sh
 
 exec: 
 	./$(EXE) $(D) $(T) $(N) $(Q) $(FILE)

@@ -5,8 +5,8 @@
 #include <thread.h>
 
 pthread_attr_t tattr;// attributi del signal handler
-volatile sig_atomic_t count_print_request; // variabile che indica quante print request sono state gestite
-volatile sig_atomic_t print_request;// variabile che indica quante print request sono arrivate da SIGUSR1
+volatile sig_atomic_t count_sigusr1; // variabile che indica quante print request sono state gestite
+volatile sig_atomic_t _sigusr1;// variabile che indica quante print request sono arrivate da SIGUSR1
 volatile sig_atomic_t is_connected = TRUE;
 volatile sig_atomic_t term_for_sig = TRUE;
 int exit_ = TRUE; // variabile che indica lo stato di terminazione dei thread
@@ -17,10 +17,8 @@ struct sockaddr_un sck_addr;
 pool * th_pool = NULL;
 
 long result_from_file(char* path) {
-    if(path == NULL) {
-        errno = EINVAL;
+    if(path == NULL) 
         return -1;
-    }
     FILE* fp =               NULL;
     if((fp = fopen(path, "rb")) == NULL) {
         perror("ERRORE: fopen error");
@@ -65,7 +63,7 @@ int  thread_create(long number_th){
         int err;
         if((err = pthread_create(&(th_pool->arr_th[i]) , NULL , &thread_work , NULL) != 0) ){
             perror("ERRORE: creazione thread error");
-            errno=EFAULT;
+            errno = EFAULT;
             return EXIT_FAILURE;
         }
     }
@@ -75,7 +73,6 @@ int  thread_create(long number_th){
 
 int write_on_socket(char* path, long res, size_t len) {
     if(path == NULL) {
-        errno = EINVAL;
         return -1;
     }
     int s;
@@ -100,40 +97,40 @@ int write_on_socket(char* path, long res, size_t len) {
         perror("ERRORE: write_n pathname error");
         return -1;
     }
-    if (s == 0) {
+    if (s == 0){
         perror("ERRORE: write_n pathname error"); 
         return 0;
     }
     return 1;
 }
 
-int write_on_socket_print_request() {
+int write_on_socket_sigusr1() {
     int s;
-    long n = -2;
+    long n = -SIGUSR1;
     errno = 0;
     if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
-        perror("ERRORE: write_on_socket_print_request error");
+        perror("ERRORE: write_on_socket_sigusr1 error");
         return -1;
     }
     if (s == 0) {
-        perror("ERRORE: write_on_socket_print_request error");
+        perror("ERRORE: write_on_socket_sigusr1 error");
         return 0;
     }
     return 1;
 }
 
-int write_on_socket_term_request(){
+int write_on_socket_finish(){
     int s;
-    long n = -1;
+    long n = -SIGTERM;
     errno = 0;
     LOCK(&(th_pool->sck_mutex));
     if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
-        perror("ERRORE: write_on_socket_term_request error");
+        perror("ERRORE: write_on_socket_finish error");
         UNLOCK(&(th_pool->sck_mutex));
         return -1;
     }
     if (s == 0) {
-        perror("ERRORE: write_on_socket_term_request error");
+        perror("ERRORE: write_on_socket_finish error");
         UNLOCK(&(th_pool->sck_mutex));
         return 0;
     }
@@ -180,10 +177,10 @@ void * thread_work(void * arg){
             }
             else{
                 LOCK(&(th_pool->sck_mutex));
-                while(print_request > count_print_request){
-                    count_print_request = count_print_request + 1;
-                    if(( s = write_on_socket_print_request()) <= 0)
-                        fprintf(stderr,"write_on_scocket_print_request number %d\n",count_print_request);
+                while(_sigusr1 > count_sigusr1){
+                    count_sigusr1 = count_sigusr1 + 1;
+                    if(( s = write_on_socket_sigusr1()) <= 0)
+                        fprintf(stderr,"write_on_scocket_sigusr1 number %d\n",count_sigusr1);
                 }
                 if(( s = write_on_socket(buffer,result,len+1)) <= 0 ){
                     fprintf(stderr,"write_on_socket %s %ld %ld\n",buffer,result,(len+1));
@@ -203,8 +200,8 @@ void * thread_work(void * arg){
     th_pool->n_th_on_work --;
     if(th_pool->n_th_on_work <= 0){
         int s;
-        if(( s = write_on_socket_term_request()) <= 0 )
-            perror("ERRORE: write_on_socket_term_request error\n");
+        if(( s = write_on_socket_finish()) <= 0 )
+            perror("ERRORE: write_on_socket_finisch error\n");
     }
     UNLOCK(&(th_pool->join_mutex));
     return (void*)NULL;
@@ -226,8 +223,8 @@ int JOIN(pthread_t th ){
 
 
 void* signal_handler_thread_work(void* arg) {
-    count_print_request = 0;
-    print_request =       0;
+    count_sigusr1 = 0;
+    _sigusr1 =      0;
     while(TRUE) {
         int signum;
         int err = sigwait(&mask , &signum);
@@ -243,8 +240,7 @@ void* signal_handler_thread_work(void* arg) {
 	            term_for_sig = FALSE;
 	            break;
             case SIGUSR1:
-                if(!is_connected)
-                    print_request = print_request + 1;
+                _sigusr1 = _sigusr1 + 1;
                 break;
             case SIGUSR2:
                 return (void*)NULL;

@@ -15,7 +15,6 @@ typedef struct pool_t{
 	pthread_t     	*arr_th;
 	size_t 			n_th;
 	size_t			n_th_on_work;
-	int 			skt;
 	pthread_mutex_t sck_mutex;
 	pthread_mutex_t join_mutex;
 } pool;
