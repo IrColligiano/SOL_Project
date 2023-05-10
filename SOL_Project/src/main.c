@@ -23,7 +23,7 @@ int my_nanosleep(long msec);
 // funzione per il controllo sull inpunt di interi long.
 long arg_int(const char* n);
 // verifica che un numero sia intero.
-int isNumber(const char* s, long* tmp);
+int is_number(const char* s, long* tmp);
 // visita la directory di partenza e naviga le sottodirectory inserendo file regolari 
 // nella coda concorrente ogni qual volta ne trova uno.
 void list_files_recursively(char *basePath);
@@ -46,20 +46,21 @@ char *DirectoryName =                NULL;       //puntatore ca char che conterr
 int main(int argc,char *argv[]){
     // controllo che ci sia almeno un argomento in argc 
     if(argc < 2){
-        fprintf(stderr,"ERRORE: pochi argomenti in input\n");
+        errno = EINVAL;
+        HANDLE_ERROR("pochi argomenti in input");
         return EXIT_FAILURE;
     }
 //_________________fork___________________//
     pid_t pid;//pid 
     if((pid = fork()) == -1) {
-    	perror("ERRORE: fork error");
+    	HANDLE_ERROR("fork()");
         return EXIT_FAILURE;
     }
 //____________________collector____________________//
 
     if(pid == 0){ // figlio che rappresenta il collector ed il server
         if(collector_main() != EXIT_SUCCESS){
-            perror("ERRORE: return collector error");
+            HANDLE_ERROR("collector_main()");
             return EXIT_FAILURE;
         }
     }
@@ -67,21 +68,21 @@ int main(int argc,char *argv[]){
 
     if(pid != 0){ // processo master che rappresenta il main ed il client
         if(signal_handler_master() !=0 ){
-            perror("ERRORE: signal_handler_master error");
+            errno = EHOSTDOWN;
+            HANDLE_ERROR("signal_handler_master()");
             return EXIT_FAILURE;
         }
         int opt; // variabile per la gestione dello switch da parte di getopt
         long tmp; // variabile temporanea
-        int opt_n=0;
-        int opt_q=0;
-        int opt_t=0;
-        int opt_d=0;
-        char*a=NULL; //puntatore char di appoggio per getopt ed altre funzioni del main
+        int opt_n = 0;
+        int opt_q = 0;
+        int opt_t = 0; 
+        int opt_d = 0;
         while((opt = getopt(argc, argv, "n:q:d:t:")) != -1){
             switch (opt){
 
             case 'n': 
-                opt_n++;
+                opt_n ++;
                 if(opt_n > 1){
                     fprintf(stderr,"ERRORE: Argomento '-n' puo' essere passato solo una volta\n");
                     return EXIT_FAILURE;
@@ -97,12 +98,12 @@ int main(int argc,char *argv[]){
                 break;
 
             case 'q':
-                opt_q++;
+                opt_q ++;
                 if(opt_q > 1){
                     fprintf(stderr,"ERRORE: Argomento '-q' puo' essere passato solo una volta\n");
                     return EXIT_FAILURE;
                 } 
-                tmp=arg_int(optarg);
+                tmp = arg_int(optarg);
                 if(tmp <= -1){
                     fprintf(stderr,"ERRORE: Argomento '-q' non valido, lunghezza coda concorrente impostato a: %ld\n",Qlen);
                 }
@@ -113,28 +114,30 @@ int main(int argc,char *argv[]){
                 break;
 
             case 'd':
-                opt_d++;
+                opt_d ++;
                 if(opt_d > 1){
                     fprintf(stderr,"ERRORE: Argomento '-d' puo' essere passato solo una volta\n");
                     return EXIT_FAILURE;
                 }
+                char * a = NULL;
                 a = arg_char_dir(optarg);
                 if(a == NULL){
-                    fprintf(stderr,"ERRORE: La directory specificata non e' valida o non esiste\n");
+                    HANDLE_ERROR("La directory specificata non e' valida o non esiste");
                 }
                 else{
+                    a = NULL;
                     //fprintf(stdout,"Directory %s\n",DirectoryName);
                 }
                 break;
 
             case 't':
-                opt_t++;
+                opt_t ++;
                 if(opt_t > 1){
                     fprintf(stderr,"ERRORE: Argomento '-t' puo' essere passato solo una volta\n");
                     return EXIT_FAILURE;
                 }
                 tmp = arg_int(optarg);
-                if(tmp<=-1){
+                if(tmp <= -1){
                     fprintf(stderr,"ERRORE: Argomento '-t' non valido, Delay impostato a: %ldms\n",Tdelay);
                 }
                 else{
@@ -149,28 +152,33 @@ int main(int argc,char *argv[]){
         sck_addr.sun_family = AF_UNIX;
         strncpy(sck_addr.sun_path, SCKNAME ,SCKLEN);
         if((fd_skt = socket(AF_UNIX, SOCK_STREAM, 0)) ==-1){
-            perror("ERRORE: socket master error");
+            HANDLE_ERROR("socket() master");
             return EXIT_FAILURE;
         }
         int err;
-        my_nanosleep(1);
+        if(my_nanosleep(1) == -1)
+            HANDLE_ERROR("nanosleep()");
+        errno = 0;
         while ( (err = connect( fd_skt, (struct sockaddr*)&sck_addr , sizeof(sck_addr) ) ) == -1 ){
-            if ( errno == ENOENT ) 
-                my_nanosleep(1000);
+            if ( errno == ENOENT ){
+                if(my_nanosleep(1000) == -1)
+                    HANDLE_ERROR("nanosleep()");
+            }
             else{
-                perror("ERRORE: connect master error");
+                HANDLE_ERROR("connect() master");
+                free(DirectoryName);
                 return EXIT_FAILURE;
             }
         }
         if(init_list(Qlen,Tdelay) != 0){
-            fprintf(stderr,"ERRORE: init_list\n");
+            HANDLE_ERROR("init_list()");
             free(DirectoryName);
             return EXIT_FAILURE;
         }
         
         if(thread_create(Nthread) != 0){
             free(DirectoryName);
-            fprintf(stderr,"ERRORE: thread_create\n");
+            HANDLE_ERROR("thread_create()");
             return EXIT_FAILURE;
         }
 //__________________inizio inserimento file in coda________________________//
@@ -182,7 +190,8 @@ int main(int argc,char *argv[]){
                     WAIT(&(Queue->list_full_cond),&(Queue->list_mutex));
                 size_t len = strlen(argv[j]);
                 if(term_for_sig && len < PATHLEN-1){
-                    my_nanosleep(Queue->msec);
+                    if(my_nanosleep(Queue->msec) == -1)
+                        HANDLE_ERROR("nanosleep()");
                     head_insertion(argv[j],len);
                     SIGNAL(&(Queue->list_cond));
                 }
@@ -206,15 +215,15 @@ int main(int argc,char *argv[]){
 //___________termino sig_handler chiudo socket e libero risorse____________//
         free_resource();
         if(pthread_kill(sig_handler_thread,SIGUSR2) != 0){
-            perror("ERRORE: pthread_kill error");
+            HANDLE_ERROR("pthread_kill()");
             return EXIT_FAILURE;
         }
         if(close(fd_skt) != 0){
-            perror("ERRORE: close error");
+            HANDLE_ERROR("close()");
             return EXIT_FAILURE;
         }
         if(waitpid(0, NULL, 0) == -1){
-            perror("ERRORE: waitpid error");
+            HANDLE_ERROR("waitpid()");
             return EXIT_FAILURE;
         }
     }
@@ -262,15 +271,10 @@ void list_files_recursively(char *basePath){
     DIR *dir = opendir(basePath);
     if(dir == NULL){
         if(errno != ENOTDIR && errno != ENOENT)
-            perror("ERRORE: opendir error");
+            HANDLE_ERROR("opendir()");
         return;
     }
     while ((dp = readdir(dir)) != NULL && term_for_sig){
-        if(errno == EBADF){
-            perror("ERRORE: readdir error");
-            closedir(dir);
-            return;
-        }
         namelen = strnlen(dp->d_name,PATHLEN-1);
         if (strcmp(dp->d_name,".") != 0 && strcmp(dp->d_name, "..") != 0){
             pathlen = strnlen(path,PATHLEN-1);
@@ -286,7 +290,7 @@ void list_files_recursively(char *basePath){
                         }
                         if(term_for_sig){
                             if( my_nanosleep(Queue->msec) == -1)
-                                perror("ERRORE: nanosleep error");
+                                HANDLE_ERROR("nanosleep()");
                             size_t len = strnlen(fullpath,PATHLEN-1);
                             head_insertion(fullpath, len);
                             SIGNAL(&(Queue->list_cond));
@@ -302,12 +306,14 @@ void list_files_recursively(char *basePath){
             }
         }
     }
+    if(dp == NULL && errno == EBADF)
+        HANDLE_ERROR("readdir()");
     if(closedir(dir) == -1)
-        perror("ERRORE: closedir error");
+        HANDLE_ERROR("closedir()");
     return;
 }
 
-int isNumber(const char* s, long* tmp){
+int is_number(const char* s, long* tmp){
     if (s == NULL) 
         return 1;
     if (strnlen(s,PATHLEN-1) == 0) 
@@ -315,8 +321,10 @@ int isNumber(const char* s, long* tmp){
     char* e =  NULL;
     errno =    0;
     long val = strtol(s, &e, 10); //strtol converte stringhe in long integer
-    if (errno == ERANGE)
+    if (errno == ERANGE){
+        HANDLE_ERROR("is_number()");
         return 2; // overflow
+    }
     if (e != NULL && *e == (char)0) {
         *tmp = val;
         return 0; // e' un numero
@@ -326,7 +334,7 @@ int isNumber(const char* s, long* tmp){
 
 long arg_int(const char* n){
     long tmp = 0; //variabile temporanea che mi raccoglie il long gestito da isNumber
-    if (isNumber(n , &tmp) != 0 && tmp < 0)
+    if (is_number(n , &tmp) != 0 && tmp < 0)
         return -1;
     else
         return tmp; 
@@ -337,7 +345,9 @@ char* arg_char_dir(char * n){
     DIR *dir = NULL;
     dir =      opendir(n);
     if (dir){ // la directory esiste
-        closedir(dir);
+        if(closedir(dir) == -1){
+            HANDLE_ERROR("closedir()");
+        }
         size_t len = strlen(n);
         if(len > PATHLEN -1)
             return NULL;

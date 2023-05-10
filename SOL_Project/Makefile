@@ -1,3 +1,5 @@
+#SHELL = /bin/bash
+
 CC = gcc
 
 INCLUDE = -I ./includes
@@ -17,8 +19,6 @@ T = -t 1000
 D = -d testdir
 
 DIR = testdir
-
-#SHELL = /bin/bash
 
 FILE = file1.dat file2.dat file3.dat file4.dat file5.dat file10.dat file12.dat file13.dat file14.dat file15.dat file16.dat file17.dat file18.dat file20.dat file100.dat file116.dat file117.dat
 
@@ -54,10 +54,11 @@ obj/main.o : src/main.c includes/thread.h includes/collector.h
 	$(CC) $(CFLAGS) -c $< -o obj/main.o
 
 clean :
-	-rm -f $(EXE) generafile $(OBJ) generafile.o $(EXE) *~ ./farm.sck expected.txt core
+	-rm -f *~ *.dat farm.sck expected.txt core \
+	rm -r $(DIR)
 
 cleanall :
-	-rm -f $(EXE) generafile $(OBJ) generafile.o $(EXE) *~ *.dat testdir ./farm.sck expected.txt core \
+	-rm -f $(EXE) generafile $(OBJ) generafile.o *~ *.dat testdir ./farm.sck expected.txt core \
 	rm -r $(DIR)
 
 test: farm

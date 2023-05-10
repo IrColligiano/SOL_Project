@@ -16,10 +16,10 @@ int read_from_socket() {
     char * path = NULL;
     if((l = read_n(fd_c, &res, sizeof(long))) != sizeof(long)) {
 		if(l == 0){
-            perror("ERRORE: read_n result error\n");
+            HANDLE_ERROR("read_n() result");
 			return 0;
         }
-		perror("ERRORE: read_n result error\n");
+		HANDLE_ERROR("read_n() result");
 		return -1;
 	}
     if(res == -SIGUSR1){ // caso in cui arriva sigurs1 e devo stampare
@@ -31,21 +31,21 @@ int read_from_socket() {
     }
 	if( (l = read_n(fd_c, &len, sizeof(size_t))) != sizeof(size_t) ) {
 		if(l == 0){
-            perror("ERRORE: read_n lenght error");
+            HANDLE_ERROR("read_n() lenght");
 			return 0;
         }
-		perror("ERRORE: read_n lenght error");
+		HANDLE_ERROR("read_n() lenght");
 		return -1;
 	}
 	path = _malloc_(sizeof(char)*(len));
 	memset(path, '\0', len);
 	if ((l = read_n (fd_c, path, sizeof(char)*(len))) != sizeof(char)*(len)) {
 		if(l == 0){
-            perror("ERRORE: read_n pathname error");
+            HANDLE_ERROR("read_n() pathname");
             free(path);
 			return 0;
         }
-		perror("ERRORE: read_n pathname error");
+		HANDLE_ERROR("read_n() pathname");
 		free(path);
 		return -1;
 	}
@@ -61,31 +61,31 @@ int collector_main(){
 
 //______________ignoro tutti i segnali da gestire__________________//
 	if(sigaction(SIGHUP,&signal_handler, NULL) == -1) {
-	    perror("ERRORE: sigaction SIGHUP error");
+	    HANDLE_ERROR("sigaction() SIGHUP");
 	    return EXIT_FAILURE;
 	}
 	if(sigaction(SIGINT,&signal_handler, NULL) == -1) {
-	    perror("ERRORE: sigaction SIGINT error");
+	    HANDLE_ERROR("sigaction() SIGINT");
 	    return EXIT_FAILURE;
 	}
 	if(sigaction(SIGQUIT,&signal_handler, NULL) == -1) {
-	    perror("ERRORE: sigaction SIGQUIT error");
+	    HANDLE_ERROR("sigaction() SIGQUIT");
 	    return EXIT_FAILURE;
 	}
 	if(sigaction(SIGTERM,&signal_handler, NULL) == -1) {
-	    perror("ERRORE: sigaction SIGTERM error");
+	    HANDLE_ERROR("sigaction() SIGTERM");
 	    return EXIT_FAILURE;
 	}
 	if(sigaction(SIGPIPE,&signal_handler, NULL) == -1) {
-	    perror("ERRORE: sigaction SIGPIPE error");
+	    HANDLE_ERROR("sigaction() SIGPIPE");
 	    return EXIT_FAILURE;
 	}
 	if(sigaction(SIGUSR1,&signal_handler, NULL) == -1) {
-	    perror("ERRORE: sigaction SIGUSR1 error");
+	    HANDLE_ERROR("sigaction() SIGUSR1");
 	    return EXIT_FAILURE;
 	}
     if(sigaction(SIGUSR2,&signal_handler, NULL) == -1) {
-	    perror("ERRORE: sigaction SIGUSR2 error");
+	    HANDLE_ERROR("sigaction() SIGUSR2");
 	    return EXIT_FAILURE;
 	}
 
@@ -96,19 +96,19 @@ int collector_main(){
 
 //__________________socket_______________________//
     if((fd_skt = socket(AF_UNIX,SOCK_STREAM,0)) == -1){
-        perror("ERRORE: socket collector error");
+        HANDLE_ERROR("socket() collector");
         return EXIT_FAILURE;
     }
     if((bind(fd_skt, (struct sockaddr *) &sck_addr, sizeof(sck_addr))) == -1){
-        perror("ERRORE: bind collector error");
+        HANDLE_ERROR("bind() collector");
         return EXIT_FAILURE;
     }
     if((listen(fd_skt , SOMAXCONN)) == -1){
-        perror("ERRORE: listen collector error");
+        HANDLE_ERROR("listen() collector");
         return EXIT_FAILURE;
     }
     if((fd_c = accept(fd_skt, NULL,0)) == -1){
-        perror("ERRORE: accept collector error");
+        HANDLE_ERROR("accept() collector");
         return EXIT_FAILURE;
     }
 //___________________leggo dalla socket________________//
@@ -117,7 +117,7 @@ int collector_main(){
     while (ok){
         err = read_from_socket();
         if(err == -1 || err == 0){
-            perror("ERRORE: read_from_socket error");
+            HANDLE_ERROR("read_from_socket()");
             ok = FALSE;
         }
         if(err == 2)
@@ -131,15 +131,15 @@ int collector_main(){
     }
 //_________________chiudo la connessione__________________//
     if(close(fd_skt) != 0){
-        perror("ERRORE: close error");
+        HANDLE_ERROR("close()");
         return EXIT_FAILURE;
     }
     if(close(fd_c) != 0){
-        perror("ERRORE: close error");
+        HANDLE_ERROR("close()");
         return EXIT_FAILURE;
     }
     if(unlink(SCKNAME) != 0){
-        perror("ERRORE: unlink error");
+        HANDLE_ERROR("unlink()");
         return EXIT_FAILURE;
     }
     if(err != 2)

@@ -5,7 +5,7 @@
 void* _malloc_(size_t size) {
     void* buffer = malloc(size);
     if(buffer == NULL){
-        perror("ERRORE: malloc error");
+        HANDLE_ERROR("malloc()");
         exit(EXIT_FAILURE);
     }
     else
@@ -20,7 +20,7 @@ int read_n(int fd, void *buf, size_t size) {
         if((r = read(fd, bufptr, left)) == -1) {
             if (errno == EINTR) 
                 continue;
-            perror("ERRORE: read error");
+            HANDLE_ERROR("read()");
             return -1;
         }
         if (r == 0) 
@@ -36,7 +36,7 @@ int write_n(int fd, void *buf, size_t size) {
     ssize_t w = 0;
     while(left > 0) {
 		if ((w = write(fd ,buf, left)) < 0) {
-	    	perror("ERRORE: write error");
+	    	HANDLE_ERROR("write() error");
 		    return -1;
 		}
 		if (w == 0) 

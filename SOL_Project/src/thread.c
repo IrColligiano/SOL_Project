@@ -19,9 +19,10 @@ pool * th_pool = NULL;
 long result_from_file(char* path) {
     if(path == NULL) 
         return -1;
-    FILE* fp =               NULL;
+    errno = 0;
+    FILE* fp = NULL;
     if((fp = fopen(path, "rb")) == NULL) {
-        perror("ERRORE: fopen error");
+        HANDLE_ERROR("fopen()");
         return -1;
     }
     size_t n_byte =          0;
@@ -34,12 +35,18 @@ long result_from_file(char* path) {
         i ++;
     }
     if(feof(fp)){
-        fclose(fp);
+        if(fclose(fp) != 0)
+            HANDLE_ERROR("fclose()");
         return res;
     }
     else{
-        fclose(fp);
-    return -1;
+        if(ferror(fp) != 0){
+            errno = EFAULT;
+            HANDLE_ERROR("fread()");
+        }
+        if(fclose(fp) != 0)
+            HANDLE_ERROR("fclose()");
+        return -1;
     }
 }
 
@@ -50,20 +57,19 @@ int  thread_create(long number_th){
     th_pool->n_th_on_work = (size_t)number_th;
     errno=0;
     if( pthread_mutex_init(&(th_pool->join_mutex),NULL) != 0){
-        perror("ERRORE: Inizializzazione variabile di mutex error");
         errno = EINVAL;
+        HANDLE_ERROR("pthread_mutex_init()");
         return EXIT_FAILURE;
     }
     if( pthread_mutex_init(&(th_pool->sck_mutex),NULL) != 0){
-        perror("ERRORE: Inizializzazione variabile di mutex error");
         errno = EINVAL;
+        HANDLE_ERROR("pthread_mutex_init()");
         return EXIT_FAILURE;
     }
     for(int i = 0; i < th_pool->n_th; i++){
         int err;
         if((err = pthread_create(&(th_pool->arr_th[i]) , NULL , &thread_work , NULL) != 0) ){
-            perror("ERRORE: creazione thread error");
-            errno = EFAULT;
+            HANDLE_ERROR("pthread_create()");
             return EXIT_FAILURE;
         }
     }
@@ -73,32 +79,33 @@ int  thread_create(long number_th){
 
 int write_on_socket(char* path, long res, size_t len) {
     if(path == NULL) {
+        errno = EINVAL;
         return -1;
     }
     int s;
     errno = 0;
     if ((s = write_n(fd_skt, &res, sizeof( long ))) < 0) {
-        perror("ERRORE: write_n result error");
+        HANDLE_ERROR("write_n() result");
         return -1;
     }
     if (s == 0) {
-        perror("ERRORE: write_n result error");
+        HANDLE_ERROR("write_n() result");
         return 0;
     }
     if ((s = write_n(fd_skt, &len, sizeof(size_t))) < 0) {
-        perror("ERRORE: write_n len error");
+        HANDLE_ERROR("write_n() len");
         return -1;
     }
     if (s == 0){
-        perror("ERRORE: write_n len error");
+        HANDLE_ERROR("write_n() len");
         return 0;
     }
     if ((s = write_n(fd_skt, path ,len)) < 0) {
-        perror("ERRORE: write_n pathname error");
+        HANDLE_ERROR("write_n() pathname");
         return -1;
     }
     if (s == 0){
-        perror("ERRORE: write_n pathname error"); 
+        HANDLE_ERROR("write_n() pathname"); 
         return 0;
     }
     return 1;
@@ -109,11 +116,11 @@ int write_on_socket_sigusr1() {
     long n = -SIGUSR1;
     errno = 0;
     if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
-        perror("ERRORE: write_on_socket_sigusr1 error");
+        HANDLE_ERROR("write_on_socket_sigusr1()");
         return -1;
     }
     if (s == 0) {
-        perror("ERRORE: write_on_socket_sigusr1 error");
+        HANDLE_ERROR("write_on_socket_sigusr1()");
         return 0;
     }
     return 1;
@@ -125,12 +132,12 @@ int write_on_socket_finish(){
     errno = 0;
     LOCK(&(th_pool->sck_mutex));
     if ((s = write_n(fd_skt, &n, sizeof(long))) < 0){
-        perror("ERRORE: write_on_socket_finish error");
+        HANDLE_ERROR("write_on_socket_finish()");
         UNLOCK(&(th_pool->sck_mutex));
         return -1;
     }
     if (s == 0) {
-        perror("ERRORE: write_on_socket_finish error");
+        HANDLE_ERROR("write_on_socket_finish()");
         UNLOCK(&(th_pool->sck_mutex));
         return 0;
     }
@@ -142,7 +149,7 @@ int write_on_socket_finish(){
 void * thread_work(void * arg){
     int exit_while = TRUE;
     while(exit_while){
-
+        errno = 0;
         LOCK(&(Queue->list_mutex));
         if( term_for_sig == FALSE && Queue->len == 0 ){
                 exit_ =      FALSE;
@@ -172,7 +179,7 @@ void * thread_work(void * arg){
                 SIGNAL(&(Queue->list_full_cond));
             UNLOCK(&(Queue->list_mutex));
             if((result = result_from_file(buffer)) == -1){
-                perror("ERRORE: result_from_file error");
+                HANDLE_ERROR("result_from_file()");
                 free(buffer);
             }
             else{
@@ -201,7 +208,7 @@ void * thread_work(void * arg){
     if(th_pool->n_th_on_work <= 0){
         int s;
         if(( s = write_on_socket_finish()) <= 0 )
-            perror("ERRORE: write_on_socket_finisch error\n");
+            HANDLE_ERROR("write_on_socket_finish()");
     }
     UNLOCK(&(th_pool->join_mutex));
     return (void*)NULL;
@@ -212,8 +219,8 @@ void * thread_work(void * arg){
 int JOIN(pthread_t th ){
     errno = 0;
     if(pthread_join(th,NULL) != 0){
-        if(errno==EDEADLK || errno == EINVAL || errno==ESRCH){
-            perror("ERRORE: join error");
+        if(errno == EDEADLK || errno == EINVAL || errno == ESRCH){
+            HANDLE_ERROR("join()");
             return EXIT_FAILURE;
         }
     }
@@ -230,6 +237,7 @@ void* signal_handler_thread_work(void* arg) {
         int err = sigwait(&mask , &signum);
         if(err != 0){
             errno = EINVAL;
+            HANDLE_ERROR("sigwait()");
             return(void*)NULL;
         }
 	    switch(signum){
@@ -255,62 +263,62 @@ int signal_handler_master() {
     memset(&signal_handler, 0, sizeof(signal_handler));
     signal_handler.sa_handler = SIG_IGN; 
     if(sigaction(SIGPIPE, &signal_handler , NULL) == -1) {
-        perror("ERRORE: sigaction SIGPIPE error");
+        HANDLE_ERROR("sigaction() SIGPIPE");
         return EXIT_FAILURE;
     }
     if(sigemptyset(&mask) != 0){
+        HANDLE_ERROR("sigemptyset()");
         errno = EINVAL;
-        perror("ERRORE: sigemptyset error");
         return EXIT_FAILURE;
     }
     if(sigaddset(&mask, SIGHUP) != 0){
+        HANDLE_ERROR("sigaddset() SIGHUP");
         errno = EINVAL;
-        perror("ERRORE: sigaddset SIGHUP error");
         return EXIT_FAILURE;
     }
     if(sigaddset(&mask, SIGINT) != 0){
+        HANDLE_ERROR("sigaddset() SIGINT");
         errno = EINVAL;
-        perror("ERRORE: sigaddset SIGINT error");
         return EXIT_FAILURE;
     }   
     if(sigaddset(&mask, SIGQUIT) != 0){
+        HANDLE_ERROR("sigaddset() SIGQUIT");
         errno = EINVAL;
-        perror("ERRORE: sigaddset SIGQUIT error");
         return EXIT_FAILURE;
     }  
     if(sigaddset(&mask, SIGTERM) != 0){
+        HANDLE_ERROR("sigaddset() SIGTERM");
         errno = EINVAL;
-        perror("ERRORE: sigaddset SIGTERM error");
         return EXIT_FAILURE;
     }  
     if(sigaddset(&mask, SIGUSR1) != 0){
+        HANDLE_ERROR("sigaddset() SIGUSR1");
         errno = EINVAL;
-        perror("ERRORE: sigaddset SIGUSR1 error");
         return EXIT_FAILURE;
     }
     if(sigaddset(&mask, SIGUSR2) != 0){
+        HANDLE_ERROR("sigaddset() SIGUSR2");
         errno = EINVAL;
-        perror("ERRORE: sigaddset SIGUSR2 error");
         return EXIT_FAILURE;
     }  
     if(pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0) {
+        HANDLE_ERROR("pthread_sigmask()");
         errno = EINVAL;
-        perror("ERRORE: pthread_sigmask error");
         return EXIT_FAILURE;
     }
     if (pthread_attr_init(&tattr)!= 0) {
+        HANDLE_ERROR("pthread_attr_init()");
         errno = ENOMEM;
-        perror("ERRORE: pthread_attr_init error");
         return EXIT_FAILURE;
     }
     if (pthread_attr_setdetachstate(&tattr , PTHREAD_CREATE_DETACHED) != 0) {
+        HANDLE_ERROR("pthread_attr_setdetachstate()");
         errno = EINVAL;
-        perror("ERRORE: pthread_attr_setdetachstate error");
         return EXIT_FAILURE;
     }
     if (pthread_create(&sig_handler_thread, &tattr, signal_handler_thread_work,(void*) NULL ) != 0) {
+        HANDLE_ERROR("pthread_create() signal handler thread");
         errno = EFAULT;
-        perror("ERRORE: pthread_create signal handler thread error");
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

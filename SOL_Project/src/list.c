@@ -13,18 +13,18 @@ int init_list(long n, long msec){
 	Queue->head =    NULL;
 	errno =            0;
 	if( pthread_mutex_init(&(Queue->list_mutex),NULL) !=0){
-    	errno = EINVAL;
-		perror("ERRORE: mutex_init error");
+		errno = EINVAL;
+		HANDLE_ERROR("pthread_mutex_init()");
         return EXIT_FAILURE;
     }
 	if(pthread_cond_init(&(Queue->list_cond),NULL) !=0){
-    	errno = EINVAL;
-		perror("ERRORE: cond_init error");
+		errno = EINVAL;
+		HANDLE_ERROR("pthread_cond_init()");
         return EXIT_FAILURE;
     }
 	if(pthread_cond_init(&(Queue->list_full_cond),NULL) !=0){
-    	errno = EINVAL;
-		perror("ERRORE: cond_init error");
+		errno = EINVAL;
+		HANDLE_ERROR("pthread_cond_init()");
         return EXIT_FAILURE;
     }
 	return EXIT_SUCCESS;
